@@ -1,5 +1,7 @@
 #include <windows.h>
 
+1 ICON smtc.ico
+
 // Version information
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION 1,0,0,0

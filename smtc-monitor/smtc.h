@@ -53,5 +53,7 @@ private:
     int currentPosition_ = 0;
     int currentDuration_ = 0;
     GlobalSystemMediaTransportControlsSessionPlaybackStatus currentStatus_ = GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed;
+    bool mediaChanged_ = false;
+    bool mediaPropertyChanged_ = false;
     bool infoDirty_ = false;
 };
