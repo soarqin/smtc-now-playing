@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rodrigocfd/windigo/ui"
+	"github.com/rodrigocfd/windigo/win"
 	"github.com/rodrigocfd/windigo/win/co"
 )
 
@@ -20,7 +21,12 @@ type Gui struct {
 	lblName *ui.Static
 	txtName *ui.Edit
 	btnShow *ui.Button
+
+	windowCreated chan struct{}
 }
+
+var notifyIcon *NotifyIcon
+var msgTaskbarCreated co.WM
 
 // Creates a new instance of our main window.
 func NewGui() *Gui {
@@ -50,14 +56,59 @@ func NewGui() *Gui {
 			Position(ui.Dpi(240, 19)),
 	)
 
-	me := &Gui{wnd, lblName, txtName, btnShow}
+	me := &Gui{wnd, lblName, txtName, btnShow, make(chan struct{})}
 	me.events()
 	return me
 }
 
 func (me *Gui) events() {
+	me.wnd.On().WmCreate(func(p ui.WmCreate) int {
+		var err error
+		msgTaskbarCreated, err = win.RegisterWindowMessage("TaskbarCreated")
+		if err != nil {
+			panic(err)
+		}
+
+		notifyIcon, err = NewNotifyIcon(me.wnd.Hwnd())
+		if err != nil {
+			panic(err)
+		}
+
+		notifyIcon.SetTooltip("Smtc Now Playing")
+		hInstance, err := win.GetModuleHandle("")
+		if err != nil {
+			panic(err)
+		}
+		hIcon, err := hInstance.LoadIcon(win.IconResStr("APP"))
+		if err != nil {
+			panic(err)
+		}
+		notifyIcon.SetIcon(hIcon)
+
+		me.windowCreated <- struct{}{}
+		return 0
+	})
+
+	me.wnd.On().Wm(msgTaskbarCreated, func(p ui.Wm) uintptr {
+		if notifyIcon != nil {
+			notifyIcon.AddAfterExplorerCrash()
+		}
+		return 0
+	})
+
+	me.wnd.On().WmDestroy(func() {
+		if notifyIcon != nil {
+			notifyIcon.Dispose()
+			notifyIcon = nil
+		}
+	})
+
 	me.btnShow.On().BnClicked(func() {
 		msg := fmt.Sprintf("Hello, %s!", me.txtName.Text())
 		me.wnd.Hwnd().MessageBox(msg, "Saying hello", co.MB_ICONINFORMATION)
 	})
+}
+
+func (me *Gui) WindowCreated() <-chan struct{} {
+	return me.windowCreated
 }

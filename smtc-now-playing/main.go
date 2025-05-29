@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"unsafe"
 
@@ -18,11 +19,11 @@ var (
 )
 
 func CreateMutex(name string) (uintptr, error) {
-	ret, _, err := procCreateMutex.Call(
-		0,
-		0,
-		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(name))),
-	)
+	ptr, err := syscall.UTF16PtrFromString(name)
+	if err != nil {
+		return 0, err
+	}
+	ret, _, err := procCreateMutex.Call(0, 0, uintptr(unsafe.Pointer(ptr)))
 	switch int(err.(syscall.Errno)) {
 	case 0:
 		return ret, nil
@@ -40,45 +41,55 @@ func main() {
 	}
 	defer syscall.CloseHandle(syscall.Handle(mutex))
 
-	// Get current directory
-	dir, err := os.Getwd()
-	// Add .mod to PATHEXT
-	os.Setenv("PATHEXT", os.Getenv("PATHEXT")+";.mod")
-	monitor := NewMonitor(filepath.Join(dir, "SmtcMonitor"))
-	if err != nil {
-		nullHwnd.MessageBox(err.Error(), "Error", co.MB_ICONERROR)
-		return
-	}
-	err = monitor.StartProcess()
-	if err != nil {
-		nullHwnd.MessageBox(err.Error(), "Error", co.MB_ICONERROR)
-		return
-	}
-	monitorErrChan := monitor.GetErrorChannel()
-	srv := NewWebServer("localhost", "11451", monitor)
-	srvErrChan := srv.Error()
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	signal.Notify(signalChan, syscall.SIGTERM)
+	runtime.LockOSThread() // important: Windows GUI is single-threaded
+	gui := NewGui()
 	go func() {
-		for {
-			select {
-			case err := <-monitorErrChan:
-				fmt.Printf("Error: %v\n", err)
-			case err := <-srvErrChan:
-				fmt.Printf("Web server error: %v\n", err)
-				srv.Stop()
-				monitor.Stop()
-				return
-			case <-signalChan:
-				fmt.Println("Received signal, stopping...")
-				srv.Stop()
-				monitor.Stop()
-				return
-			}
+		_, ok := <-gui.WindowCreated()
+		if !ok {
+			return
 		}
+		// Get current directory
+		dir, err := os.Getwd()
+		// Add .mod to PATHEXT
+		os.Setenv("PATHEXT", os.Getenv("PATHEXT")+";.mod")
+		monitor := NewMonitor(filepath.Join(dir, "SmtcMonitor"))
+		if err != nil {
+			nullHwnd.MessageBox(err.Error(), "Error", co.MB_ICONERROR)
+			return
+		}
+		err = monitor.StartProcess()
+		if err != nil {
+			nullHwnd.MessageBox(err.Error(), "Error", co.MB_ICONERROR)
+			return
+		}
+		monitorErrChan := monitor.GetErrorChannel()
+		srv := NewWebServer("localhost", "11451", monitor)
+		srvErrChan := srv.Error()
+		signalChan := make(chan os.Signal, 1)
+		signal.Notify(signalChan, os.Interrupt)
+		signal.Notify(signalChan, syscall.SIGTERM)
+		go func() {
+			for {
+				select {
+				case err := <-monitorErrChan:
+					fmt.Printf("Error: %v\n", err)
+				case err := <-srvErrChan:
+					fmt.Printf("Web server error: %v\n", err)
+					srv.Stop()
+					monitor.Stop()
+					return
+				case <-signalChan:
+					fmt.Println("Received signal, stopping...")
+					srv.Stop()
+					monitor.Stop()
+					return
+				}
+			}
+		}()
+		srv.Start()
+		fmt.Printf("Server started at http://%s\n", srv.Address())
+		monitor.Join()
 	}()
-	srv.Start()
-	fmt.Printf("Server started at http://%s\n", srv.Address())
-	monitor.Join()
+	gui.wnd.RunAsMain()
+	return
 }
