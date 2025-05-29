@@ -80,10 +80,11 @@ func (me *Gui) events() {
 			panic(err)
 		}
 		hIcon, err := hInstance.LoadIcon(win.IconResStr("APP"))
-		if err != nil {
-			panic(err)
+		if err == nil {
+			notifyIcon.SetIcon(hIcon)
+			me.wnd.Hwnd().SendMessage(co.WM_SETICON, 0, win.LPARAM(hIcon))
+			me.wnd.Hwnd().SendMessage(co.WM_SETICON, 1, win.LPARAM(hIcon))
 		}
-		notifyIcon.SetIcon(hIcon)
 
 		me.windowCreated <- struct{}{}
 		return 0

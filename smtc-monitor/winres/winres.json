@@ -2,9 +2,9 @@
   "RT_GROUP_ICON": {
     "APP": {
       "0000": [
-        "icon.png",
-        "icon64.png",
-        "icon16.png"
+        "../../smtc-now-playing/winres/icon.png",
+        "../../smtc-now-playing/winres/icon64.png",
+        "../../smtc-now-playing/winres/icon16.png"
       ]
     }
   },
@@ -29,7 +29,7 @@
         "printer-driver-isolation": false,
         "gdi-scaling": false,
         "segment-heap": false,
-        "use-common-controls-v6": true
+        "use-common-controls-v6": false
       }
     }
   },
@@ -42,16 +42,16 @@
         },
         "info": {
           "0409": {
-            "Comments": "SMTC Now Playing",
+            "Comments": "SMTC Monitor",
             "CompanyName": "Soar Qin",
-            "FileDescription": "SMTC Now Playing",
+            "FileDescription": "SMTC Monitor",
             "FileVersion": "0.1.0.0",
-            "InternalName": "SMTC Now Playing",
+            "InternalName": "SMTC Monitor",
             "LegalCopyright": "Copyright © 2025 Soar Qin",
             "LegalTrademarks": "",
-            "OriginalFilename": "SmtcNowPlaying.exe",
+            "OriginalFilename": "SmtcMonitor.exe",
             "PrivateBuild": "",
-            "ProductName": "SMTC Now Playing",
+            "ProductName": "SMTC Monitor",
             "ProductVersion": "0.1.0.0",
             "SpecialBuild": ""
           }

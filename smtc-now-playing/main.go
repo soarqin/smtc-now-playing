@@ -33,6 +33,12 @@ func CreateMutex(name string) (uintptr, error) {
 }
 
 func main() {
+	g, err := NewProcessExitGroup()
+	if err != nil {
+		panic(err)
+	}
+	defer g.Dispose()
+
 	mutex, err := CreateMutex("org.soardev.SmtcNowPlaying")
 	nullHwnd := win.HWND(0)
 	if err != nil {
@@ -42,19 +48,21 @@ func main() {
 	defer syscall.CloseHandle(syscall.Handle(mutex))
 
 	runtime.LockOSThread() // important: Windows GUI is single-threaded
+
+	// Get current directory
+	dir, err := os.Getwd()
+	// Add .mod to PATHEXT
+	os.Setenv("PATHEXT", os.Getenv("PATHEXT")+";.mod")
+	if err != nil {
+		nullHwnd.MessageBox(err.Error(), "Error", co.MB_ICONERROR)
+		return
+	}
+	monitor := NewMonitor(g, filepath.Join(dir, "SmtcMonitor"))
+
 	gui := NewGui()
 	go func() {
 		_, ok := <-gui.WindowCreated()
 		if !ok {
-			return
-		}
-		// Get current directory
-		dir, err := os.Getwd()
-		// Add .mod to PATHEXT
-		os.Setenv("PATHEXT", os.Getenv("PATHEXT")+";.mod")
-		monitor := NewMonitor(filepath.Join(dir, "SmtcMonitor"))
-		if err != nil {
-			nullHwnd.MessageBox(err.Error(), "Error", co.MB_ICONERROR)
 			return
 		}
 		err = monitor.StartProcess()
@@ -88,8 +96,8 @@ func main() {
 		}()
 		srv.Start()
 		fmt.Printf("Server started at http://%s\n", srv.Address())
-		monitor.Join()
 	}()
 	gui.wnd.RunAsMain()
+	monitor.Join()
 	return
 }

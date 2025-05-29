@@ -10,6 +10,7 @@ import (
 
 // Monitor represents a process monitor that can start a subprocess and monitor its output
 type Monitor struct {
+	exitGroup  ProcessExitGroup
 	cmd        *exec.Cmd
 	command    string
 	args       []string
@@ -22,8 +23,9 @@ type Monitor struct {
 }
 
 // NewMonitor creates a new Monitor instance
-func NewMonitor(command string, args ...string) *Monitor {
+func NewMonitor(g ProcessExitGroup, command string, args ...string) *Monitor {
 	return &Monitor{
+		exitGroup:  g,
 		command:    command,
 		args:       args,
 		outputChan: make(chan string, 64),
@@ -50,6 +52,11 @@ func (m *Monitor) internalStart() error {
 	// Start the process
 	if err := m.cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start process: %w", err)
+	}
+
+	if err := m.exitGroup.AddProcess(m.cmd.Process); err != nil {
+		m.cmd.Process.Kill()
+		return fmt.Errorf("failed to assign process to job object: %w", err)
 	}
 
 	m.isRunning = true
