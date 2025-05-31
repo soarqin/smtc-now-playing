@@ -8,7 +8,7 @@ import (
 	"github.com/rodrigocfd/windigo/win/co"
 )
 
-const notifyIconMsg = co.WM_APP + 1
+const NotifyIconMsg = co.WM_APP + 1
 
 type NotifyIcon struct {
 	hwnd win.HWND
@@ -22,7 +22,7 @@ func NewNotifyIcon(hwnd win.HWND) (*NotifyIcon, error) {
 	}
 	data := ni.newData()
 	data.UFlags |= co.NIF_MESSAGE
-	data.UCallbackMessage = notifyIconMsg
+	data.UCallbackMessage = NotifyIconMsg
 	if err := win.Shell_NotifyIcon(co.NIM_ADD, data); err != nil {
 		return nil, err
 	}

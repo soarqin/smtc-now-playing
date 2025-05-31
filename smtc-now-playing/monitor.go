@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -48,6 +49,8 @@ func (m *Monitor) internalStart() error {
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
+
+	m.cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
 	// Start the process
 	if err := m.cmd.Start(); err != nil {

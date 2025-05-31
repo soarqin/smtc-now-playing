@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/rodrigocfd/windigo/ui"
 	"github.com/rodrigocfd/windigo/win"
@@ -17,7 +18,7 @@ type Gui struct {
 	portEdit  *ui.Edit
 	portUd    *ui.UpDown
 	btnStart  *ui.Button
-	urlText   *ui.Edit
+	infoText  *ui.Edit
 	exigGroup ProcessExitGroup
 	srv       *WebServer
 	monitor   *Monitor
@@ -99,7 +100,6 @@ func (me *Gui) events() {
 			me.wnd.Hwnd().SendMessage(co.WM_SETICON, 0, win.LPARAM(hIcon))
 			me.wnd.Hwnd().SendMessage(co.WM_SETICON, 1, win.LPARAM(hIcon))
 		}
-		go me.monitorProcess()
 		return 0
 	})
 
@@ -110,18 +110,74 @@ func (me *Gui) events() {
 		return 0
 	})
 
+	me.wnd.On().Wm(NotifyIconMsg, func(p ui.Wm) uintptr {
+		switch co.WM(p.LParam.LoWord()) {
+		case co.WM_LBUTTONDBLCLK:
+			if style, _ := me.wnd.Hwnd().GetWindowLongPtr(co.GWLP_STYLE); style&uintptr(co.WS_VISIBLE) != 0 {
+				me.wnd.Hwnd().ShowWindow(co.SW_HIDE)
+			} else {
+				me.wnd.Hwnd().ShowWindow(co.SW_SHOWNORMAL)
+				me.wnd.Hwnd().SetForegroundWindow()
+			}
+		case co.WM_RBUTTONUP:
+			popup, err := win.CreatePopupMenu()
+			if err != nil {
+				break
+			}
+			utf16Ptr, err := syscall.UTF16PtrFromString("E&xit")
+			if err != nil {
+				break
+			}
+			mii := &win.MENUITEMINFO{
+				FMask:      co.MIIM_STRING | co.MIIM_ID,
+				FType:      co.MFT_STRING,
+				WId:        1,
+				DwTypeData: utf16Ptr,
+			}
+			mii.SetCbSize()
+			popup.InsertMenuItemByPos(0, mii)
+			pos, err := win.GetCursorPos()
+			if err != nil {
+				break
+			}
+			res, err := popup.TrackPopupMenu(co.TPM_RETURNCMD|co.TPM_NONOTIFY, int(pos.X), int(pos.Y), me.wnd.Hwnd())
+			if err != nil {
+				break
+			}
+			switch res {
+			case 1:
+				me.wnd.Hwnd().DestroyWindow()
+			}
+			popup.DestroyMenu()
+		}
+		return 0
+	})
+
+	me.wnd.On().WmSize(func(p ui.WmSize) {
+		if p.Request() == co.SIZE_REQ_MINIMIZED {
+			me.wnd.Hwnd().ShowWindow(co.SW_HIDE)
+		}
+	})
+
 	me.wnd.On().WmDestroy(func() {
 		if notifyIcon != nil {
 			notifyIcon.Dispose()
 			notifyIcon = nil
 		}
+		me.stopProcess()
 	})
 
 	me.btnStart.On().BnClicked(func() {
+		if me.monitor != nil {
+			me.stopProcess()
+			return
+		}
+		me.monitorProcess()
 	})
 }
 
 func (me *Gui) monitorProcess() {
+	me.btnStart.Hwnd().EnableWindow(false)
 	// Get current directory
 	dir, err := os.Getwd()
 	// Add .mod to PATHEXT
@@ -142,23 +198,30 @@ func (me *Gui) monitorProcess() {
 	go func() {
 		for {
 			select {
-			case err := <-monitorErrChan:
-				fmt.Printf("Error: %v\n", err)
+			case <-monitorErrChan:
+				break
 			case err := <-srvErrChan:
-				fmt.Printf("Web server error: %v\n", err)
+				me.infoText.SetText(fmt.Sprintf("Web server error: %v", err))
 				me.stopProcess()
 				return
 			}
 		}
 	}()
 	me.srv.Start()
-	fmt.Printf("Server started at http://%s\n", me.srv.Address())
+	me.infoText.SetText(fmt.Sprintf("Server started at http://%s", me.srv.Address()))
+	me.btnStart.SetText("&Stop")
+	me.btnStart.Hwnd().EnableWindow(true)
 }
 
 func (me *Gui) stopProcess() {
-	me.srv.Stop()
-	me.monitor.Stop()
-	me.monitor.Join()
-	me.srv = nil
-	me.monitor = nil
+	me.btnStart.Hwnd().EnableWindow(false)
+	if me.srv != nil {
+		me.srv.Stop()
+		me.monitor.Stop()
+		me.monitor.Join()
+		me.srv = nil
+		me.monitor = nil
+	}
+	me.btnStart.SetText("&Start")
+	me.btnStart.Hwnd().EnableWindow(true)
 }

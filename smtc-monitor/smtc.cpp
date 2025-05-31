@@ -47,6 +47,7 @@ void Smtc::start() {
         return;
     }
     currentSession_ = sessionManager_.GetCurrentSession();
+    mediaPropertyChanged_ = currentSession_ != nullptr;
     auto propertyChanged = [this]() {
         currentSession_.MediaPropertiesChanged([&](const GlobalSystemMediaTransportControlsSession& sender, const MediaPropertiesChangedEventArgs& args) {
             std::lock_guard lock(sessionMutex_);
@@ -174,6 +175,9 @@ void Smtc::checkUpdateOfThumbnail() {
         wasNotEmpty = true;
     }
     do {
+        if (!currentProperties_) {
+            break;
+        }
         auto thumbnail = currentProperties_.Thumbnail();
         if (!thumbnail) {
             break;
