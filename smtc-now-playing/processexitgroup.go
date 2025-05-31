@@ -2,22 +2,10 @@ package main
 
 import (
 	"os"
-	"sync"
-	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
-
-// We use this struct to retreive process handle(which is unexported)
-// from os.Process using unsafe operation.
-type process struct {
-	Pid    int
-	mode   uint8
-	state  atomic.Uint64
-	sigMu  sync.RWMutex // avoid race between wait and signal
-	handle uintptr
-}
 
 type ProcessExitGroup windows.Handle
 
@@ -48,7 +36,13 @@ func (g ProcessExitGroup) Dispose() error {
 }
 
 func (g ProcessExitGroup) AddProcess(p *os.Process) error {
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_TERMINATE|windows.PROCESS_SET_QUOTA, false, uint32(p.Pid))
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(handle)
+
 	return windows.AssignProcessToJobObject(
 		windows.Handle(g),
-		windows.Handle((*process)(unsafe.Pointer(p)).handle))
+		handle)
 }

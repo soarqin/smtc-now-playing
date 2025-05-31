@@ -1,10 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"os/signal"
-	"path/filepath"
 	"runtime"
 	"syscall"
 	"unsafe"
@@ -33,6 +29,8 @@ func CreateMutex(name string) (uintptr, error) {
 }
 
 func main() {
+	runtime.LockOSThread() // important: Windows GUI is single-threaded
+
 	g, err := NewProcessExitGroup()
 	if err != nil {
 		panic(err)
@@ -47,57 +45,7 @@ func main() {
 	}
 	defer syscall.CloseHandle(syscall.Handle(mutex))
 
-	runtime.LockOSThread() // important: Windows GUI is single-threaded
-
-	// Get current directory
-	dir, err := os.Getwd()
-	// Add .mod to PATHEXT
-	os.Setenv("PATHEXT", os.Getenv("PATHEXT")+";.mod")
-	if err != nil {
-		nullHwnd.MessageBox(err.Error(), "Error", co.MB_ICONERROR)
-		return
-	}
-	monitor := NewMonitor(g, filepath.Join(dir, "SmtcMonitor"))
-
-	gui := NewGui()
-	go func() {
-		_, ok := <-gui.WindowCreated()
-		if !ok {
-			return
-		}
-		err = monitor.StartProcess()
-		if err != nil {
-			nullHwnd.MessageBox(err.Error(), "Error", co.MB_ICONERROR)
-			return
-		}
-		monitorErrChan := monitor.GetErrorChannel()
-		srv := NewWebServer("localhost", "11451", monitor)
-		srvErrChan := srv.Error()
-		signalChan := make(chan os.Signal, 1)
-		signal.Notify(signalChan, os.Interrupt)
-		signal.Notify(signalChan, syscall.SIGTERM)
-		go func() {
-			for {
-				select {
-				case err := <-monitorErrChan:
-					fmt.Printf("Error: %v\n", err)
-				case err := <-srvErrChan:
-					fmt.Printf("Web server error: %v\n", err)
-					srv.Stop()
-					monitor.Stop()
-					return
-				case <-signalChan:
-					fmt.Println("Received signal, stopping...")
-					srv.Stop()
-					monitor.Stop()
-					return
-				}
-			}
-		}()
-		srv.Start()
-		fmt.Printf("Server started at http://%s\n", srv.Address())
-	}()
+	gui := NewGui(g)
 	gui.wnd.RunAsMain()
-	monitor.Join()
 	return
 }

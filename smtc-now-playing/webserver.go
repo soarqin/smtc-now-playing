@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -189,7 +188,7 @@ func (srv *WebServer) Start() {
 	srv.errorChan = make(chan error, 1)
 	go func() {
 		err := srv.httpSrv.ListenAndServe()
-		if err != nil {
+		if err != nil && err != http.ErrServerClosed {
 			srv.errorChan <- err
 		}
 	}()
@@ -278,7 +277,7 @@ func (srv *WebServer) Stop() {
 	for _, ch := range srv.progressUpdate {
 		close(ch)
 	}
-	srv.httpSrv.Shutdown(context.Background())
+	srv.httpSrv.Close()
 }
 
 func (srv *WebServer) Address() string {

@@ -2,61 +2,75 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/rodrigocfd/windigo/ui"
 	"github.com/rodrigocfd/windigo/win"
 	"github.com/rodrigocfd/windigo/win/co"
 )
 
-// func main() {
-// 	runtime.LockOSThread() // important: Windows GUI is single-threaded
-
-// 	myWindow := NewMyWindow() // instantiate
-// 	myWindow.wnd.RunAsMain()  // ...and run
-// }
-
 // This struct represents our main window.
 type Gui struct {
-	wnd     *ui.Main
-	lblName *ui.Static
-	txtName *ui.Edit
-	btnShow *ui.Button
-
-	windowCreated chan struct{}
+	wnd       *ui.Main
+	lblPort   *ui.Static
+	portEdit  *ui.Edit
+	portUd    *ui.UpDown
+	btnStart  *ui.Button
+	urlText   *ui.Edit
+	exigGroup ProcessExitGroup
+	srv       *WebServer
+	monitor   *Monitor
 }
 
 var notifyIcon *NotifyIcon
 var msgTaskbarCreated co.WM
 
 // Creates a new instance of our main window.
-func NewGui() *Gui {
+func NewGui(g ProcessExitGroup) *Gui {
 	wnd := ui.NewMain( // create the main window
 		ui.OptsMain().
-			Title("Hello you").
-			Size(ui.Dpi(340, 80)).
+			Title("SMTC Now Playing").
+			Size(ui.Dpi(340, 100)).
 			ClassIconId(101), // ID of icon resource, see resources folder
 	)
 
-	lblName := ui.NewStatic( // create the child controls
+	lblPort := ui.NewStatic( // create the child controls
 		wnd,
 		ui.OptsStatic().
-			Text("Your name").
+			Text("Port").
 			Position(ui.Dpi(10, 22)),
 	)
-	txtName := ui.NewEdit(
+	portEdit := ui.NewEdit(
 		wnd,
 		ui.OptsEdit().
-			Position(ui.Dpi(80, 20)).
-			Width(ui.DpiX(150)),
+			Text("11451").
+			CtrlStyle(co.ES_NUMBER|co.ES_RIGHT).
+			Position(ui.Dpi(50, 20)).
+			Width(ui.DpiX(80)),
 	)
-	btnShow := ui.NewButton(
+	ud := ui.NewUpDown(
+		wnd,
+		ui.OptsUpDown().
+			CtrlStyle(co.UDS_AUTOBUDDY|co.UDS_ALIGNRIGHT|co.UDS_SETBUDDYINT|co.UDS_NOTHOUSANDS).
+			Position(ui.Dpi(230, 20)).Range(1024, 32767).Value(11451),
+	)
+	btnStart := ui.NewButton(
 		wnd,
 		ui.OptsButton().
-			Text("&Show").
+			Text("&Start").
 			Position(ui.Dpi(240, 19)),
 	)
+	urlText := ui.NewEdit(
+		wnd,
+		ui.OptsEdit().
+			CtrlStyle(co.ES_AUTOHSCROLL|co.ES_READONLY).
+			Text("").
+			Position(ui.Dpi(10, 50)).
+			Width(ui.DpiX(320)),
+	)
 
-	me := &Gui{wnd, lblName, txtName, btnShow, make(chan struct{})}
+	me := &Gui{wnd, lblPort, portEdit, ud, btnStart, urlText, g, nil, nil}
 	me.events()
 	return me
 }
@@ -85,8 +99,7 @@ func (me *Gui) events() {
 			me.wnd.Hwnd().SendMessage(co.WM_SETICON, 0, win.LPARAM(hIcon))
 			me.wnd.Hwnd().SendMessage(co.WM_SETICON, 1, win.LPARAM(hIcon))
 		}
-
-		me.windowCreated <- struct{}{}
+		go me.monitorProcess()
 		return 0
 	})
 
@@ -104,12 +117,48 @@ func (me *Gui) events() {
 		}
 	})
 
-	me.btnShow.On().BnClicked(func() {
-		msg := fmt.Sprintf("Hello, %s!", me.txtName.Text())
-		me.wnd.Hwnd().MessageBox(msg, "Saying hello", co.MB_ICONINFORMATION)
+	me.btnStart.On().BnClicked(func() {
 	})
 }
 
-func (me *Gui) WindowCreated() <-chan struct{} {
-	return me.windowCreated
+func (me *Gui) monitorProcess() {
+	// Get current directory
+	dir, err := os.Getwd()
+	// Add .mod to PATHEXT
+	os.Setenv("PATHEXT", os.Getenv("PATHEXT")+";.mod")
+	if err != nil {
+		me.wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)
+		return
+	}
+	me.monitor = NewMonitor(me.exigGroup, filepath.Join(dir, "SmtcMonitor"))
+	err = me.monitor.StartProcess()
+	if err != nil {
+		me.wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)
+		return
+	}
+	monitorErrChan := me.monitor.GetErrorChannel()
+	me.srv = NewWebServer("localhost", "11451", me.monitor)
+	srvErrChan := me.srv.Error()
+	go func() {
+		for {
+			select {
+			case err := <-monitorErrChan:
+				fmt.Printf("Error: %v\n", err)
+			case err := <-srvErrChan:
+				fmt.Printf("Web server error: %v\n", err)
+				me.stopProcess()
+				return
+			}
+		}
+	}()
+	me.srv.Start()
+	fmt.Printf("Server started at http://%s\n", me.srv.Address())
+}
+
+func (me *Gui) stopProcess() {
+	me.srv.Stop()
+	me.monitor.Stop()
+	me.monitor.Join()
+	me.srv = nil
+	me.monitor = nil
 }

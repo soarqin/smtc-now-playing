@@ -1,4 +1,4 @@
-github.com/rodrigocfd/windigo v0.1.1-0.20250528135716-a81e94e5e677 h1:o/DUvVeMu4D9hqqpAAT67/0B9eFFCBasvv9U02hSpmY=
-github.com/rodrigocfd/windigo v0.1.1-0.20250528135716-a81e94e5e677/go.mod h1:3zHhLYU08CkrMx5cdPlmC1HObT8fSldWtfS8cnSRzYo=
+github.com/rodrigocfd/windigo v0.1.1-0.20250530182933-ce49881b428c h1:6Cwbw6ANoYUm1eFD7sEcwq9QgSDzvo44p8G6dAcFFxg=
+github.com/rodrigocfd/windigo v0.1.1-0.20250530182933-ce49881b428c/go.mod h1:3zHhLYU08CkrMx5cdPlmC1HObT8fSldWtfS8cnSRzYo=
 golang.org/x/sys v0.33.0 h1:q3i8TbbEz+JRD9ywIRlyRAQbM0qF7hu24q3teo2hbuw=
 golang.org/x/sys v0.33.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
