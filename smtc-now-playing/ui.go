@@ -180,8 +180,6 @@ func (me *Gui) monitorProcess() {
 	me.btnStart.Hwnd().EnableWindow(false)
 	// Get current directory
 	dir, err := os.Getwd()
-	// Add .mod to PATHEXT
-	os.Setenv("PATHEXT", os.Getenv("PATHEXT")+";.mod")
 	if err != nil {
 		me.wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)
 		return

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"runtime"
 	"syscall"
 	"unsafe"
@@ -30,6 +31,8 @@ func CreateMutex(name string) (uintptr, error) {
 
 func main() {
 	runtime.LockOSThread() // important: Windows GUI is single-threaded
+	// Add .m to PATHEXT
+	os.Setenv("PATHEXT", os.Getenv("PATHEXT")+";.m")
 
 	g, err := NewProcessExitGroup()
 	if err != nil {

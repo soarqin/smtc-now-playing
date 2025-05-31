@@ -104,10 +104,12 @@ void Smtc::start() {
             int64_t position = timelineProperties.Position().count();
             auto lastUpdatedTime = timelineProperties.LastUpdatedTime();
             if (lastUpdatedTime.time_since_epoch().count() > 0) {
-                auto playbackRatePtr = playbackInfo.PlaybackRate();
-                auto playbackRate = playbackRatePtr ? playbackRatePtr.Value() : 1.0;
+                if (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing) {
+                    auto playbackRatePtr = playbackInfo.PlaybackRate();
+                    auto playbackRate = playbackRatePtr ? playbackRatePtr.Value() : 1.0;
 
-                position += (int64_t)((DateTime::clock::now() - lastUpdatedTime).count() * playbackRate);
+                    position += (int64_t)((DateTime::clock::now() - lastUpdatedTime).count() * playbackRate);
+                }
                 int newPosition = (int)(position / DateTime::clock::period::den);
                 if (newPosition != currentPosition_) {
                     currentPosition_ = newPosition;
