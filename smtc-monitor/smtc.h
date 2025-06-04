@@ -1,9 +1,9 @@
 #pragma once
 
+#include <windows.h>
 #include <winrt/Windows.Media.Control.h>
 
 #include <mutex>
-#include <vector>
 #include <functional>
 #include <string>
 

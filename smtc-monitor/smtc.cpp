@@ -7,6 +7,7 @@
 #include <chrono>
 #include <tuple>
 #include <mutex>
+#include <sstream>
 
 using namespace Windows::Foundation;
 using namespace Windows::Storage::Streams;
@@ -17,6 +18,41 @@ Smtc::Smtc() {
 
 Smtc::~Smtc() {
     uninit_apartment();
+}
+
+static std::wstring escape(const std::wstring& str) {
+    std::wostringstream result;
+    for (auto c : str) {
+        switch (c) {
+        case L'\n':
+            result << L"\\n";
+            break;
+        case L'\r':
+            result << L"\\r";
+            break;
+        case L'\t':
+            result << L"\\t";
+            break;
+        case L'\\':
+            result << L"\\\\";
+            break;
+        case L'\v':
+            result << L"\\v";
+            break;
+        case L'\b':
+            result << L"\\b";
+            break;
+        case L'\f':
+            result << L"\\f";
+            break;
+        case L'\a':
+            result << L"\\a";
+            break;
+        default:
+            result << c;
+        }
+    }
+    return result.str();
 }
 
 template<typename T>
@@ -163,8 +199,8 @@ void Smtc::getMediaProperties() {
     str = currentProperties_.Title();
     const std::wstring newTitle(str.begin(), str.end());
     if (currentArtist_ != newArtist || currentTitle_ != newTitle) {
-        currentArtist_ = newArtist;
-        currentTitle_ = newTitle;
+        currentArtist_ = escape(newArtist);
+        currentTitle_ = escape(newTitle);
         infoDirty_ = true;
     }
 

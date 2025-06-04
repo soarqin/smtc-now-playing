@@ -211,9 +211,9 @@ func (srv *WebServer) Start() {
 						break
 					}
 					j, err := json.Marshal(&infoDetail{
-						Artist:   parts[1],
-						Title:    parts[2],
-						AlbumArt: parts[3],
+						Artist:   unescape(parts[1]),
+						Title:    unescape(parts[2]),
+						AlbumArt: unescape(parts[3]),
 					})
 					if err != nil {
 						continue
@@ -286,4 +286,39 @@ func (srv *WebServer) Address() string {
 
 func (srv *WebServer) Error() <-chan error {
 	return srv.errorChan
+}
+
+func unescape(str string) string {
+	result := strings.Builder{}
+	l := len(str)
+	for i := 0; i < l; i++ {
+		c := str[i]
+		if c == '\\' {
+			i++
+			if i >= l {
+				break
+			}
+			switch str[i] {
+			case 'n':
+				result.WriteRune('\n')
+			case 'r':
+				result.WriteRune('\r')
+			case 't':
+				result.WriteRune('\t')
+			case 'v':
+				result.WriteRune('\v')
+			case 'b':
+				result.WriteRune('\b')
+			case 'f':
+				result.WriteRune('\f')
+			case 'a':
+				result.WriteRune('\a')
+			default:
+				result.WriteByte(c)
+			}
+		} else {
+			result.WriteByte(c)
+		}
+	}
+	return result.String()
 }
