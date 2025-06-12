@@ -191,7 +191,7 @@ func (me *Gui) monitorProcess() {
 		return
 	}
 	monitorErrChan := me.monitor.GetErrorChannel()
-	me.srv = NewWebServer("localhost", "11451", me.monitor)
+	me.srv = NewWebServer("0.0.0.0", me.portEdit.Text(), me.monitor)
 	srvErrChan := me.srv.Error()
 	go func() {
 		for {
