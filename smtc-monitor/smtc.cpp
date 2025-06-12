@@ -241,14 +241,13 @@ void Smtc::checkUpdateOfThumbnail() {
         HANDLE hFile;
         auto contentType = stream.ContentType();
         if (contentType == L"image/png") {
-            hFile = CreateFileW(L"static/thumbnail.png", GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-            currentThumbnailPath_ = L"thumbnail.png";
+            currentThumbnailPath_ = L"image/thumbnail.png";
         } else if (contentType.starts_with(L"image/jpeg") || contentType.starts_with(L"image/jpg")) {
-            hFile = CreateFileW(L"static/thumbnail.jpg", GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-            currentThumbnailPath_ = L"thumbnail.jpg";
+            currentThumbnailPath_ = L"image/thumbnail.jpg";
         } else {
             break;
         }
+        hFile = CreateFileW(currentThumbnailPath_.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (hFile == INVALID_HANDLE_VALUE) {
             currentThumbnailPath_.clear();
             break;

@@ -13,6 +13,8 @@ type WebServer struct {
 	httpSrv *http.Server
 	monitor *Monitor
 
+	currentTheme string
+
 	currentMutex    sync.Mutex
 	currentInfo     string
 	currentProgress string
@@ -45,12 +47,15 @@ func NewWebServer(host string, port string, monitor *Monitor) *WebServer {
 		},
 		monitor: monitor,
 
+		currentTheme: "default",
+
 		infoUpdate:     make([]chan string, 0),
 		progressUpdate: make([]chan string, 0),
 	}
 
 	mux.HandleFunc("/info_changed", srv.handleInfoChanged)
 	mux.HandleFunc("/progress_changed", srv.handleProgressChanged)
+	mux.HandleFunc("/image/", srv.handleImage)
 	mux.HandleFunc("/", srv.handleStatic)
 
 	return srv
@@ -180,8 +185,12 @@ func (srv *WebServer) handleProgressChanged(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+func (srv *WebServer) handleImage(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, r.URL.Path[1:])
+}
+
 func (srv *WebServer) handleStatic(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "static/"+r.URL.Path[1:])
+	http.ServeFile(w, r, fmt.Sprintf("themes/%s/%s", srv.currentTheme, r.URL.Path[1:]))
 }
 
 func (srv *WebServer) Start() {
@@ -286,6 +295,10 @@ func (srv *WebServer) Address() string {
 
 func (srv *WebServer) Error() <-chan error {
 	return srv.errorChan
+}
+
+func (srv *WebServer) SetTheme(theme string) {
+	srv.currentTheme = theme
 }
 
 func unescape(str string) string {
