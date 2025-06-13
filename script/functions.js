@@ -7,9 +7,18 @@ function formatTime(seconds) {
 
 // Update the UI with track information
 function updateTrackInfo(track) {
-    document.getElementById('trackName').textContent = track.title || '未播放';
-    document.getElementById('artistName').textContent = track.artist || '未知艺术家';
+    const trackName = document.getElementById('trackName');
+    const artistName = document.getElementById('artistName');
+    if (trackName) {
+        trackName.textContent = track.title ? ((artistName || !track.artist) ? track.title : (track.artist + ' - ' + track.title)) : '未播放';
+    }
+    if (artistName) {
+        artistName.textContent = track.artist || '未知艺术家';
+    }
     const albumArtImg = document.getElementById('albumArt');
+    if (!albumArtImg) {
+        return
+    }
     const albumArtDiv = albumArtImg.parentElement;
     if (track.albumArt && track.albumArt.trim() !== '') {
         albumArtImg.src = track.albumArt + '?v=' + Date.now();
@@ -23,15 +32,32 @@ function updateTrackInfo(track) {
 // Update progress bar and time
 function updateProgress(currentTime, duration, status) {
     const progress = (currentTime / duration) * 100;
-    document.getElementById('progress').style.width = `${progress}%`;
-    if (duration > 0) {
-        document.getElementById('currentTime').textContent = formatTime(currentTime);
-        document.getElementById('totalTime').textContent = formatTime(duration);
-    } else {
-        document.getElementById('currentTime').textContent = '';
-        document.getElementById('totalTime').textContent = '';
+    const progressBar = document.getElementById('progress');
+    if (progressBar) {
+        progressBar.style.width = `${progress}%`;
     }
-    document.getElementById('status').textContent = (() => {
+    const currentTimeText = document.getElementById('currentTime');
+    const totalTimeText = document.getElementById('totalTime');
+    if (duration > 0) {
+        if (currentTimeText) {
+            currentTimeText.textContent = formatTime(currentTime);
+        }
+        if (totalTimeText) {
+            totalTimeText.textContent = formatTime(duration);
+        }
+    } else {
+        if (currentTimeText) {
+            currentTimeText.textContent = '';
+        }
+        if (totalTimeText) {
+            totalTimeText.textContent = '';
+        }
+    }
+    const statusText = document.getElementById('status');
+    if (!statusText) {
+        return
+    }
+    statusText.textContent = (() => {
         switch (status) {
             case 0:
             case 1:

@@ -13,15 +13,17 @@ import (
 
 // This struct represents our main window.
 type Gui struct {
-	wnd       *ui.Main
-	lblPort   *ui.Static
-	portEdit  *ui.Edit
-	portUd    *ui.UpDown
-	btnStart  *ui.Button
-	infoText  *ui.Edit
-	exigGroup ProcessExitGroup
-	srv       *WebServer
-	monitor   *Monitor
+	wnd        *ui.Main
+	lblPort    *ui.Static
+	portEdit   *ui.Edit
+	portUd     *ui.UpDown
+	lblTheme   *ui.Static
+	themeCombo *ui.ComboBox
+	btnStart   *ui.Button
+	infoText   *ui.Edit
+	exigGroup  ProcessExitGroup
+	srv        *WebServer
+	monitor    *Monitor
 }
 
 var notifyIcon *NotifyIcon
@@ -32,7 +34,7 @@ func NewGui(g ProcessExitGroup) *Gui {
 	wnd := ui.NewMain( // create the main window
 		ui.OptsMain().
 			Title("SMTC Now Playing").
-			Size(ui.Dpi(340, 100)).
+			Size(ui.Dpi(340, 130)).
 			ClassIconId(101), // ID of icon resource, see resources folder
 	)
 
@@ -56,6 +58,18 @@ func NewGui(g ProcessExitGroup) *Gui {
 			CtrlStyle(co.UDS_AUTOBUDDY|co.UDS_ALIGNRIGHT|co.UDS_SETBUDDYINT|co.UDS_NOTHOUSANDS).
 			Position(ui.Dpi(230, 20)).Range(1024, 32767).Value(11451),
 	)
+	lblTheme := ui.NewStatic(
+		wnd,
+		ui.OptsStatic().
+			Text("Theme").
+			Position(ui.Dpi(10, 52)),
+	)
+	themeCombo := ui.NewComboBox(
+		wnd,
+		ui.OptsComboBox().
+			Position(ui.Dpi(80, 50)).
+			Width(ui.DpiX(80)),
+	)
 	btnStart := ui.NewButton(
 		wnd,
 		ui.OptsButton().
@@ -67,18 +81,28 @@ func NewGui(g ProcessExitGroup) *Gui {
 		ui.OptsEdit().
 			CtrlStyle(co.ES_AUTOHSCROLL|co.ES_READONLY).
 			Text("").
-			Position(ui.Dpi(10, 50)).
+			Position(ui.Dpi(10, 80)).
 			Width(ui.DpiX(320)),
 	)
 
-	me := &Gui{wnd, lblPort, portEdit, ud, btnStart, urlText, g, nil, nil}
+	me := &Gui{wnd, lblPort, portEdit, ud, lblTheme, themeCombo, btnStart, urlText, g, nil, nil}
 	me.events()
 	return me
 }
 
 func (me *Gui) events() {
 	me.wnd.On().WmCreate(func(p ui.WmCreate) int {
-		var err error
+		// List themes in folder and add them to combobox
+		themes, err := os.ReadDir("themes")
+		if err != nil {
+			me.wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)
+			return 0
+		}
+		for _, theme := range themes {
+			me.themeCombo.Items.Add(theme.Name())
+		}
+		me.themeCombo.Items.Select(0)
+
 		msgTaskbarCreated, err = win.RegisterWindowMessage("TaskbarCreated")
 		if err != nil {
 			panic(err)
@@ -167,6 +191,12 @@ func (me *Gui) events() {
 		me.stopProcess()
 	})
 
+	me.themeCombo.On().CbnSelChange(func() {
+		if me.srv != nil {
+			me.srv.SetTheme(me.themeCombo.Text())
+		}
+	})
+
 	me.btnStart.On().BnClicked(func() {
 		if me.monitor != nil {
 			me.stopProcess()
@@ -191,7 +221,7 @@ func (me *Gui) monitorProcess() {
 		return
 	}
 	monitorErrChan := me.monitor.GetErrorChannel()
-	me.srv = NewWebServer("0.0.0.0", me.portEdit.Text(), me.monitor)
+	me.srv = NewWebServer("0.0.0.0", me.portEdit.Text(), me.monitor, me.themeCombo.Text())
 	srvErrChan := me.srv.Error()
 	go func() {
 		for {

@@ -38,7 +38,7 @@ type progressDetail struct {
 	Status   int `json:"status"`
 }
 
-func NewWebServer(host string, port string, monitor *Monitor) *WebServer {
+func NewWebServer(host string, port string, monitor *Monitor, theme string) *WebServer {
 	mux := http.NewServeMux()
 	srv := &WebServer{
 		httpSrv: &http.Server{
@@ -47,7 +47,7 @@ func NewWebServer(host string, port string, monitor *Monitor) *WebServer {
 		},
 		monitor: monitor,
 
-		currentTheme: "default",
+		currentTheme: theme,
 
 		infoUpdate:     make([]chan string, 0),
 		progressUpdate: make([]chan string, 0),
@@ -56,6 +56,7 @@ func NewWebServer(host string, port string, monitor *Monitor) *WebServer {
 	mux.HandleFunc("/info_changed", srv.handleInfoChanged)
 	mux.HandleFunc("/progress_changed", srv.handleProgressChanged)
 	mux.HandleFunc("/image/", srv.handleImage)
+	mux.HandleFunc("/script/", srv.handleScript)
 	mux.HandleFunc("/", srv.handleStatic)
 
 	return srv
@@ -191,6 +192,10 @@ func (srv *WebServer) handleImage(w http.ResponseWriter, r *http.Request) {
 
 func (srv *WebServer) handleStatic(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, fmt.Sprintf("themes/%s/%s", srv.currentTheme, r.URL.Path[1:]))
+}
+
+func (srv *WebServer) handleScript(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, fmt.Sprintf("%s", r.URL.Path[1:]))
 }
 
 func (srv *WebServer) Start() {
