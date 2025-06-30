@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/rodrigocfd/windigo/ui"
@@ -236,7 +237,11 @@ func (me *Gui) monitorProcess() {
 		}
 	}()
 	me.srv.Start()
-	me.infoText.SetText(fmt.Sprintf("Server started at http://%s", me.srv.Address()))
+	addr := me.srv.Address()
+	if strings.HasPrefix(addr, "0.0.0.0:") {
+		addr = "localhost:" + addr[len("0.0.0.0:"):]
+	}
+	me.infoText.SetText(fmt.Sprintf("Server started at http://%s", addr))
 	me.btnStart.SetText("&Stop")
 	me.btnStart.Hwnd().EnableWindow(true)
 }
