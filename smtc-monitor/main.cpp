@@ -14,18 +14,25 @@ int wmain(int argc, wchar_t** argv) {
     _setmode(_fileno(stderr), _O_U8TEXT);
     _setmode(_fileno(stdin), _O_U8TEXT);
     Smtc smtc;
-    smtc.onInfoUpdate([&smtc](const std::wstring& artist, const std::wstring& title, const std::wstring& thumbnailPath) {
-        fwprintf(stdout, L"I\t%ls\t%ls\t%ls\n", artist.c_str(), title.c_str(), thumbnailPath.c_str());
-        fflush(stdout);
-    });
-    smtc.onProgressUpdate([](int currentTime, int duration, GlobalSystemMediaTransportControlsSessionPlaybackStatus status) {
-        fwprintf(stdout, L"P\t%d\t%d\t%d\n", currentTime, duration, (int)status);
-        fflush(stdout);
-    });
     smtc.init();
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         smtc.update();
+        wchar_t artist[256];
+        wchar_t title[256];
+        wchar_t thumbnailPath[1024];
+        int currentTime;
+        int duration;
+        int status;
+        auto dirty = smtc.retrieveDirtyData(artist, title, thumbnailPath, &currentTime, &duration, &status);
+        if (dirty & 1) {
+            fwprintf(stdout, L"I\t%ls\t%ls\t%ls\n", artist, title, thumbnailPath);
+            fflush(stdout);
+        }
+        if (dirty & 2) {
+            fwprintf(stdout, L"P\t%d\t%d\t%d\n", currentTime, duration, status);
+            fflush(stdout);
+        }
     }
     return 0;
 }

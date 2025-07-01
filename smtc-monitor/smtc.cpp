@@ -3,6 +3,7 @@
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.Foundation.h>
 #include <windows.h>
+#include <shlwapi.h>
 
 #include <chrono>
 #include <tuple>
@@ -55,15 +56,60 @@ static std::wstring escape(const std::wstring& str) {
     return result.str();
 }
 
+struct HandleHolder {
+    HANDLE hEvent = nullptr;
+    HandleHolder(HANDLE hEvent = nullptr) : hEvent(hEvent) {}
+    HandleHolder(const HandleHolder&) = delete;
+    HandleHolder& operator=(const HandleHolder&) = delete;
+    HandleHolder(HandleHolder&& other) noexcept : hEvent(other.hEvent) {
+        other.hEvent = nullptr;
+    }
+    HandleHolder& operator=(HandleHolder&& other) noexcept {
+        if (this->hEvent) {
+            CloseHandle(this->hEvent);
+        }
+        hEvent = other.hEvent;
+        other.hEvent = nullptr;
+        return *this;
+    }
+    HandleHolder& operator=(HANDLE hEvent) {
+        if (this->hEvent) {
+            CloseHandle(this->hEvent);
+        }
+        this->hEvent = hEvent;
+        return *this;
+    }
+    ~HandleHolder() {
+        if (hEvent) {
+            CloseHandle(hEvent);
+            hEvent = nullptr;
+        }
+    }
+    operator HANDLE() const {
+        return hEvent;
+    }
+};
+
 template<typename T>
 inline static std::tuple<AsyncStatus, T> WaitForAsyncOperation(IAsyncOperation<T> operation) {
+    static thread_local std::vector<HandleHolder> hEvents;
+
     if (operation.Status() != AsyncStatus::Completed) {
-        HANDLE hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        HandleHolder event(nullptr);
+        if (hEvents.empty()) {
+            event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        } else {
+            event = std::move(hEvents.back());
+            hEvents.pop_back();
+        }
         operation.Completed([&](const IAsyncOperation<T>& sender, const AsyncStatus& status) {
-            SetEvent(hEvent);
-            });
-        WaitForSingleObject(hEvent, INFINITE);
-        CloseHandle(hEvent);
+            SetEvent(event);
+        });
+        WaitForSingleObject(event, INFINITE);
+
+        if (hEvents.size() < 16) {
+            hEvents.emplace_back(std::move(event));
+        }
     }
     auto status = operation.Status();
     if (status == AsyncStatus::Completed) {
@@ -101,7 +147,6 @@ void Smtc::init() {
 }
 
 void Smtc::update() {
-    bool progressDirty = false;
     if (mediaChanged_.exchange(false)) {
         std::lock_guard lock(sessionMutex_);
         currentProperties_ = nullptr;
@@ -117,8 +162,8 @@ void Smtc::update() {
                 currentTitle_.clear();
                 currentThumbnailPath_.clear();
                 currentThumbnailLength_ = 0;
-                if (infoUpdateCallback_) infoUpdateCallback_(currentArtist_, currentTitle_, currentThumbnailPath_);
-                if (progressUpdateCallback_) progressUpdateCallback_(currentPosition_, currentDuration_, currentStatus_);
+                infoDirty_.store(true);
+                progressDirty_.store(true);
             }
             return;
         }
@@ -135,7 +180,7 @@ void Smtc::update() {
     auto status = playbackInfo.PlaybackStatus();
     if (status != currentStatus_) {
         currentStatus_ = status;
-        progressDirty = true;
+        progressDirty_.store(true);
     }
     int64_t position = timelineProperties.Position().count();
     auto lastUpdatedTime = timelineProperties.LastUpdatedTime();
@@ -149,29 +194,41 @@ void Smtc::update() {
         int newPosition = (int)(position / DateTime::clock::period::den);
         if (newPosition != currentPosition_) {
             currentPosition_ = newPosition;
-            progressDirty = true;
+            progressDirty_.store(true);
         }
         int newDuration = (int)(timelineProperties.EndTime().count() / DateTime::clock::period::den);
         if (newDuration != currentDuration_) {
             currentDuration_ = newDuration;
-            progressDirty = true;
+            progressDirty_.store(true);
         }
     } else {
         if (currentPosition_ != 0 || currentDuration_ != 0) {
             currentPosition_ = 0;
             currentDuration_ = 0;
-            infoDirty_.store(true);
+            progressDirty_.store(true);
         }
     }
 
     std::lock_guard lock(sessionMutex_);
     checkUpdateOfThumbnail();
-    if (infoDirty_.exchange(false) && infoUpdateCallback_) {
-        infoUpdateCallback_(currentArtist_, currentTitle_, currentThumbnailPath_);
+}
+
+int Smtc::retrieveDirtyData(wchar_t *artist, wchar_t *title, wchar_t *thumbnailPath, int *position, int *duration, int *status) {
+    std::lock_guard lock(sessionMutex_);
+    int dirty = 0;
+    if (infoDirty_.exchange(false)) {
+        StrCpyNW(artist, currentArtist_.c_str(), 256);
+        StrCpyNW(title, currentTitle_.c_str(), 256);
+        StrCpyNW(thumbnailPath, currentThumbnailPath_.c_str(), 1024);
+        dirty |= 1;
     }
-    if (progressDirty && progressUpdateCallback_) {
-        progressUpdateCallback_(currentPosition_, currentDuration_, currentStatus_);
+    if (progressDirty_.exchange(false)) {
+        *position = currentPosition_;
+        *duration = currentDuration_;
+        *status = (int)currentStatus_;
+        dirty |= 2;
     }
+    return dirty;
 }
 
 void Smtc::getMediaProperties() {

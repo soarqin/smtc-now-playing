@@ -18,14 +18,22 @@ public:
 
     void init();
     void update();
-
-    inline void onInfoUpdate(std::function<void(const std::wstring&, const std::wstring&, const std::wstring&)> callback) {
-        infoUpdateCallback_ = std::move(callback);
-    }
-
-    inline void onProgressUpdate(std::function<void(int currentTime, int duration, GlobalSystemMediaTransportControlsSessionPlaybackStatus)> callback) {
-        progressUpdateCallback_ = std::move(callback);
-    }
+    /*
+     * returns int with bits:
+     *  bit0: info dirty (artist, title, thumbnail)
+     *  bit1: progress dirty (position, duration, status)
+     * artist: 256 characters (UTF-16)
+     * title: 256 characters (UTF-16)
+     * thumbnailPath: 1024 characters (UTF-16)
+     * status:
+     *  0: Closed
+     *  1: Opened
+     *  2: Changing
+     *  3: Stopped
+     *  4: Playing
+     *  5: Paused
+     */
+    int retrieveDirtyData(wchar_t *artist, wchar_t *title, wchar_t *thumbnailPath, int *position, int *duration, int *status);
 
     inline const std::wstring &getArtist() const { return currentArtist_; }
     inline const std::wstring &getTitle() const { return currentTitle_; }
@@ -39,8 +47,6 @@ private:
     void checkUpdateOfThumbnail();
     void propertyChanged();
 
-    std::function<void(const std::wstring&, const std::wstring&, const std::wstring&)> infoUpdateCallback_;
-    std::function<void(int currentTime, int duration, GlobalSystemMediaTransportControlsSessionPlaybackStatus)> progressUpdateCallback_;
     GlobalSystemMediaTransportControlsSessionManager sessionManager_ = nullptr;
     GlobalSystemMediaTransportControlsSession currentSession_ = nullptr;
     GlobalSystemMediaTransportControlsSessionMediaProperties currentProperties_ = nullptr;
@@ -56,4 +62,5 @@ private:
     std::atomic<bool> mediaChanged_ = false;
     std::atomic<bool> mediaPropertyChanged_ = false;
     std::atomic<bool> infoDirty_ = false;
+    std::atomic<bool> progressDirty_ = false;
 };
