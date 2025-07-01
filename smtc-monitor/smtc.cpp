@@ -61,7 +61,7 @@ inline static std::tuple<AsyncStatus, T> WaitForAsyncOperation(IAsyncOperation<T
         HANDLE hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         operation.Completed([&](const IAsyncOperation<T>& sender, const AsyncStatus& status) {
             SetEvent(hEvent);
-        });
+            });
         WaitForSingleObject(hEvent, INFINITE);
         CloseHandle(hEvent);
     }
@@ -85,107 +85,98 @@ inline static AsyncStatus WaitForAsyncOperationNoReturn(IAsyncOperation<T> opera
     return operation.Status();
 }
 
-void Smtc::start() {
-    isRunning_ = true;
-    auto [status, sessionManager_] = WaitForAsyncOperation(GlobalSystemMediaTransportControlsSessionManager::RequestAsync());
+void Smtc::init() {
+    auto [status, sessionManager] = WaitForAsyncOperation(GlobalSystemMediaTransportControlsSessionManager::RequestAsync());
     if (status != AsyncStatus::Completed) {
         return;
     }
+    sessionManager_ = sessionManager;
     currentSession_ = sessionManager_.GetCurrentSession();
     mediaPropertyChanged_ = currentSession_ != nullptr;
-    auto propertyChanged = [this]() {
-        currentSession_.MediaPropertiesChanged([&](const GlobalSystemMediaTransportControlsSession& sender, const MediaPropertiesChangedEventArgs& args) {
-            std::lock_guard lock(sessionMutex_);
-            mediaPropertyChanged_ = true;
-        });
-    };
     if (currentSession_) propertyChanged();
     sessionManager_.CurrentSessionChanged([&](const GlobalSystemMediaTransportControlsSessionManager& sender, const CurrentSessionChangedEventArgs& args) {
         std::lock_guard lock(sessionMutex_);
         mediaChanged_ = true;
         mediaPropertyChanged_ = true;
     });
-    while (isRunning_) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        bool progressDirty = false;
-        {
-            std::lock_guard lock(sessionMutex_);
-            if (mediaChanged_) {
-                mediaChanged_ = false;
-                currentProperties_ = nullptr;
-                auto oldSession = currentSession_;
-                currentSession_ = sessionManager_.GetCurrentSession();
-                if (!currentSession_) {
-                    mediaPropertyChanged_ = false;
-                    if (oldSession) {
-                        currentPosition_ = 0;
-                        currentDuration_ = 0;
-                        currentStatus_ = GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed;
-                        currentArtist_.clear();
-                        currentTitle_.clear();
-                        currentThumbnailPath_.clear();
-                        currentThumbnailLength_ = 0;
-                        if (infoUpdateCallback_) infoUpdateCallback_(currentArtist_, currentTitle_, currentThumbnailPath_);
-                        if (progressUpdateCallback_) progressUpdateCallback_(currentPosition_, currentDuration_, currentStatus_);
-                    }
-                    continue;
-                }
-            }
-            if (mediaPropertyChanged_) {
-                mediaPropertyChanged_ = false;
-                propertyChanged();
-                getMediaProperties();
-            }
-            if (!currentSession_) {
-                continue;
-            }
-            auto timelineProperties = currentSession_.GetTimelineProperties();
-            auto playbackInfo = currentSession_.GetPlaybackInfo();
-            auto status = playbackInfo.PlaybackStatus();
-            if (status != currentStatus_) {
-                currentStatus_ = status;
-                progressDirty = true;
-            }
-            int64_t position = timelineProperties.Position().count();
-            auto lastUpdatedTime = timelineProperties.LastUpdatedTime();
-            if (lastUpdatedTime.time_since_epoch().count() > 0) {
-                if (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing) {
-                    auto playbackRatePtr = playbackInfo.PlaybackRate();
-                    auto playbackRate = playbackRatePtr ? playbackRatePtr.Value() : 1.0;
-
-                    position += (int64_t)((DateTime::clock::now() - lastUpdatedTime).count() * playbackRate);
-                }
-                int newPosition = (int)(position / DateTime::clock::period::den);
-                if (newPosition != currentPosition_) {
-                    currentPosition_ = newPosition;
-                    progressDirty = true;
-                }
-                int newDuration = (int)(timelineProperties.EndTime().count() / DateTime::clock::period::den);
-                if (newDuration != currentDuration_) {
-                    currentDuration_ = newDuration;
-                    progressDirty = true;
-                }
-            } else {
-                if (currentPosition_ != 0 || currentDuration_ != 0) {
-                    currentPosition_ = 0;
-                    currentDuration_ = 0;
-                    infoDirty_ = true;
-                }
-            }
-            checkUpdateOfThumbnail();
-        }
-        if (infoDirty_ && infoUpdateCallback_) {
-            infoUpdateCallback_(currentArtist_, currentTitle_, currentThumbnailPath_);
-            infoDirty_ = false;
-        }
-        if (progressDirty && progressUpdateCallback_) {
-            progressUpdateCallback_(currentPosition_, currentDuration_, currentStatus_);
-        }
-    }
 }
 
-void Smtc::stop() {
-    isRunning_ = false;
+void Smtc::update() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    bool progressDirty = false;
+    {
+        std::lock_guard lock(sessionMutex_);
+        if (mediaChanged_) {
+            mediaChanged_ = false;
+            currentProperties_ = nullptr;
+            auto oldSession = currentSession_;
+            currentSession_ = sessionManager_.GetCurrentSession();
+            if (!currentSession_) {
+                mediaPropertyChanged_ = false;
+                if (oldSession) {
+                    currentPosition_ = 0;
+                    currentDuration_ = 0;
+                    currentStatus_ = GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed;
+                    currentArtist_.clear();
+                    currentTitle_.clear();
+                    currentThumbnailPath_.clear();
+                    currentThumbnailLength_ = 0;
+                    if (infoUpdateCallback_) infoUpdateCallback_(currentArtist_, currentTitle_, currentThumbnailPath_);
+                    if (progressUpdateCallback_) progressUpdateCallback_(currentPosition_, currentDuration_, currentStatus_);
+                }
+                return;
+            }
+        }
+        if (mediaPropertyChanged_) {
+            mediaPropertyChanged_ = false;
+            propertyChanged();
+            getMediaProperties();
+        }
+        if (!currentSession_) {
+            return;
+        }
+        auto timelineProperties = currentSession_.GetTimelineProperties();
+        auto playbackInfo = currentSession_.GetPlaybackInfo();
+        auto status = playbackInfo.PlaybackStatus();
+        if (status != currentStatus_) {
+            currentStatus_ = status;
+            progressDirty = true;
+        }
+        int64_t position = timelineProperties.Position().count();
+        auto lastUpdatedTime = timelineProperties.LastUpdatedTime();
+        if (lastUpdatedTime.time_since_epoch().count() > 0) {
+            if (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing) {
+                auto playbackRatePtr = playbackInfo.PlaybackRate();
+                auto playbackRate = playbackRatePtr ? playbackRatePtr.Value() : 1.0;
+
+                position += (int64_t)((DateTime::clock::now() - lastUpdatedTime).count() * playbackRate);
+            }
+            int newPosition = (int)(position / DateTime::clock::period::den);
+            if (newPosition != currentPosition_) {
+                currentPosition_ = newPosition;
+                progressDirty = true;
+            }
+            int newDuration = (int)(timelineProperties.EndTime().count() / DateTime::clock::period::den);
+            if (newDuration != currentDuration_) {
+                currentDuration_ = newDuration;
+                progressDirty = true;
+            }
+        } else {
+            if (currentPosition_ != 0 || currentDuration_ != 0) {
+                currentPosition_ = 0;
+                currentDuration_ = 0;
+                infoDirty_ = true;
+            }
+        }
+        checkUpdateOfThumbnail();
+    }
+    if (infoDirty_ && infoUpdateCallback_) {
+        infoUpdateCallback_(currentArtist_, currentTitle_, currentThumbnailPath_);
+        infoDirty_ = false;
+    }
+    if (progressDirty && progressUpdateCallback_) {
+        progressUpdateCallback_(currentPosition_, currentDuration_, currentStatus_);
+    }
 }
 
 void Smtc::getMediaProperties() {
@@ -271,4 +262,11 @@ void Smtc::checkUpdateOfThumbnail() {
     currentThumbnailPath_.clear();
     currentThumbnailLength_ = 0;
     infoDirty_ = infoDirty_ || wasNotEmpty;
+}
+
+void Smtc::propertyChanged() {
+    currentSession_.MediaPropertiesChanged([&](const GlobalSystemMediaTransportControlsSession& sender, const MediaPropertiesChangedEventArgs& args) {
+        std::lock_guard lock(sessionMutex_);
+        mediaPropertyChanged_ = true;
+        });
 }

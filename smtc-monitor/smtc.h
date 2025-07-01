@@ -15,8 +15,8 @@ public:
     Smtc();
     ~Smtc();
 
-    void start();
-    void stop();
+    void init();
+    void update();
 
     inline void onInfoUpdate(std::function<void(const std::wstring&, const std::wstring&, const std::wstring&)> callback) {
         infoUpdateCallback_ = std::move(callback);
@@ -35,12 +35,11 @@ public:
 
 private:
     void getMediaProperties();
-    void updateMediaProperties();
     void checkUpdateOfThumbnail();
+    void propertyChanged();
 
     std::function<void(const std::wstring&, const std::wstring&, const std::wstring&)> infoUpdateCallback_;
     std::function<void(int currentTime, int duration, GlobalSystemMediaTransportControlsSessionPlaybackStatus)> progressUpdateCallback_;
-    bool isRunning_ = false;
     GlobalSystemMediaTransportControlsSessionManager sessionManager_ = nullptr;
     GlobalSystemMediaTransportControlsSession currentSession_ = nullptr;
     GlobalSystemMediaTransportControlsSessionMediaProperties currentProperties_ = nullptr;

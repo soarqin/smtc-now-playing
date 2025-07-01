@@ -22,6 +22,10 @@ int wmain(int argc, wchar_t** argv) {
         fwprintf(stdout, L"P\t%d\t%d\t%d\n", currentTime, duration, (int)status);
         fflush(stdout);
     });
-    smtc.start();
+    smtc.init();
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        smtc.update();
+    }
     return 0;
 }
