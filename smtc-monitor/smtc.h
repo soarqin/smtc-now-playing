@@ -4,6 +4,7 @@
 #include <winrt/Windows.Media.Control.h>
 
 #include <mutex>
+#include <atomic>
 #include <functional>
 #include <string>
 
@@ -43,7 +44,7 @@ private:
     GlobalSystemMediaTransportControlsSessionManager sessionManager_ = nullptr;
     GlobalSystemMediaTransportControlsSession currentSession_ = nullptr;
     GlobalSystemMediaTransportControlsSessionMediaProperties currentProperties_ = nullptr;
-    std::recursive_mutex sessionMutex_;
+    std::mutex sessionMutex_;
 
     std::wstring currentArtist_;
     std::wstring currentTitle_;
@@ -52,7 +53,7 @@ private:
     int currentPosition_ = 0;
     int currentDuration_ = 0;
     GlobalSystemMediaTransportControlsSessionPlaybackStatus currentStatus_ = GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed;
-    bool mediaChanged_ = false;
-    bool mediaPropertyChanged_ = false;
-    bool infoDirty_ = false;
+    std::atomic<bool> mediaChanged_ = false;
+    std::atomic<bool> mediaPropertyChanged_ = false;
+    std::atomic<bool> infoDirty_ = false;
 };

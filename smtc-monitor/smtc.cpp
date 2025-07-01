@@ -92,87 +92,82 @@ void Smtc::init() {
     }
     sessionManager_ = sessionManager;
     currentSession_ = sessionManager_.GetCurrentSession();
-    mediaPropertyChanged_ = currentSession_ != nullptr;
+    mediaPropertyChanged_.store(currentSession_ != nullptr);
     if (currentSession_) propertyChanged();
     sessionManager_.CurrentSessionChanged([&](const GlobalSystemMediaTransportControlsSessionManager& sender, const CurrentSessionChangedEventArgs& args) {
-        std::lock_guard lock(sessionMutex_);
-        mediaChanged_ = true;
-        mediaPropertyChanged_ = true;
+        mediaChanged_.store(true);
+        mediaPropertyChanged_.store(true);
     });
 }
 
 void Smtc::update() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     bool progressDirty = false;
-    {
+    if (mediaChanged_.exchange(false)) {
         std::lock_guard lock(sessionMutex_);
-        if (mediaChanged_) {
-            mediaChanged_ = false;
-            currentProperties_ = nullptr;
-            auto oldSession = currentSession_;
-            currentSession_ = sessionManager_.GetCurrentSession();
-            if (!currentSession_) {
-                mediaPropertyChanged_ = false;
-                if (oldSession) {
-                    currentPosition_ = 0;
-                    currentDuration_ = 0;
-                    currentStatus_ = GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed;
-                    currentArtist_.clear();
-                    currentTitle_.clear();
-                    currentThumbnailPath_.clear();
-                    currentThumbnailLength_ = 0;
-                    if (infoUpdateCallback_) infoUpdateCallback_(currentArtist_, currentTitle_, currentThumbnailPath_);
-                    if (progressUpdateCallback_) progressUpdateCallback_(currentPosition_, currentDuration_, currentStatus_);
-                }
-                return;
-            }
-        }
-        if (mediaPropertyChanged_) {
-            mediaPropertyChanged_ = false;
-            propertyChanged();
-            getMediaProperties();
-        }
+        currentProperties_ = nullptr;
+        auto oldSession = currentSession_;
+        currentSession_ = sessionManager_.GetCurrentSession();
         if (!currentSession_) {
-            return;
-        }
-        auto timelineProperties = currentSession_.GetTimelineProperties();
-        auto playbackInfo = currentSession_.GetPlaybackInfo();
-        auto status = playbackInfo.PlaybackStatus();
-        if (status != currentStatus_) {
-            currentStatus_ = status;
-            progressDirty = true;
-        }
-        int64_t position = timelineProperties.Position().count();
-        auto lastUpdatedTime = timelineProperties.LastUpdatedTime();
-        if (lastUpdatedTime.time_since_epoch().count() > 0) {
-            if (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing) {
-                auto playbackRatePtr = playbackInfo.PlaybackRate();
-                auto playbackRate = playbackRatePtr ? playbackRatePtr.Value() : 1.0;
-
-                position += (int64_t)((DateTime::clock::now() - lastUpdatedTime).count() * playbackRate);
-            }
-            int newPosition = (int)(position / DateTime::clock::period::den);
-            if (newPosition != currentPosition_) {
-                currentPosition_ = newPosition;
-                progressDirty = true;
-            }
-            int newDuration = (int)(timelineProperties.EndTime().count() / DateTime::clock::period::den);
-            if (newDuration != currentDuration_) {
-                currentDuration_ = newDuration;
-                progressDirty = true;
-            }
-        } else {
-            if (currentPosition_ != 0 || currentDuration_ != 0) {
+            mediaPropertyChanged_.store(false);
+            if (oldSession) {
                 currentPosition_ = 0;
                 currentDuration_ = 0;
-                infoDirty_ = true;
+                currentStatus_ = GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed;
+                currentArtist_.clear();
+                currentTitle_.clear();
+                currentThumbnailPath_.clear();
+                currentThumbnailLength_ = 0;
+                if (infoUpdateCallback_) infoUpdateCallback_(currentArtist_, currentTitle_, currentThumbnailPath_);
+                if (progressUpdateCallback_) progressUpdateCallback_(currentPosition_, currentDuration_, currentStatus_);
             }
+            return;
         }
-        checkUpdateOfThumbnail();
     }
-    if (infoDirty_ && infoUpdateCallback_) {
+    if (mediaPropertyChanged_.exchange(false)) {
+        propertyChanged();
+        getMediaProperties();
+    }
+    if (!currentSession_) {
+        return;
+    }
+    auto timelineProperties = currentSession_.GetTimelineProperties();
+    auto playbackInfo = currentSession_.GetPlaybackInfo();
+    auto status = playbackInfo.PlaybackStatus();
+    if (status != currentStatus_) {
+        currentStatus_ = status;
+        progressDirty = true;
+    }
+    int64_t position = timelineProperties.Position().count();
+    auto lastUpdatedTime = timelineProperties.LastUpdatedTime();
+    if (lastUpdatedTime.time_since_epoch().count() > 0) {
+        if (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing) {
+            auto playbackRatePtr = playbackInfo.PlaybackRate();
+            auto playbackRate = playbackRatePtr ? playbackRatePtr.Value() : 1.0;
+
+            position += (int64_t)((DateTime::clock::now() - lastUpdatedTime).count() * playbackRate);
+        }
+        int newPosition = (int)(position / DateTime::clock::period::den);
+        if (newPosition != currentPosition_) {
+            currentPosition_ = newPosition;
+            progressDirty = true;
+        }
+        int newDuration = (int)(timelineProperties.EndTime().count() / DateTime::clock::period::den);
+        if (newDuration != currentDuration_) {
+            currentDuration_ = newDuration;
+            progressDirty = true;
+        }
+    } else {
+        if (currentPosition_ != 0 || currentDuration_ != 0) {
+            currentPosition_ = 0;
+            currentDuration_ = 0;
+            infoDirty_.store(true);
+        }
+    }
+
+    std::lock_guard lock(sessionMutex_);
+    checkUpdateOfThumbnail();
+    if (infoDirty_.exchange(false) && infoUpdateCallback_) {
         infoUpdateCallback_(currentArtist_, currentTitle_, currentThumbnailPath_);
-        infoDirty_ = false;
     }
     if (progressDirty && progressUpdateCallback_) {
         progressUpdateCallback_(currentPosition_, currentDuration_, currentStatus_);
@@ -190,7 +185,7 @@ void Smtc::getMediaProperties() {
             currentTitle_.clear();
             currentThumbnailPath_.clear();
             currentThumbnailLength_ = 0;
-            infoDirty_ = true;
+            infoDirty_.store(true);
         }
         return;
     }
@@ -201,7 +196,7 @@ void Smtc::getMediaProperties() {
     if (currentArtist_ != newArtist || currentTitle_ != newTitle) {
         currentArtist_ = escape(newArtist);
         currentTitle_ = escape(newTitle);
-        infoDirty_ = true;
+        infoDirty_.store(true);
     }
 
     currentThumbnailLength_ = 0;
@@ -255,18 +250,17 @@ void Smtc::checkUpdateOfThumbnail() {
         WriteFile(hFile, content.data(), (DWORD)content.Length(), &bytesWritten, nullptr);
         CloseHandle(hFile);
         currentThumbnailLength_ = (int)bufSize;
-        infoDirty_ = true;
+        infoDirty_.store(true);
         return;
     } while (false);
 
     currentThumbnailPath_.clear();
     currentThumbnailLength_ = 0;
-    infoDirty_ = infoDirty_ || wasNotEmpty;
+    infoDirty_.store(infoDirty_.load() || wasNotEmpty);
 }
 
 void Smtc::propertyChanged() {
     currentSession_.MediaPropertiesChanged([&](const GlobalSystemMediaTransportControlsSession& sender, const MediaPropertiesChangedEventArgs& args) {
-        std::lock_guard lock(sessionMutex_);
-        mediaPropertyChanged_ = true;
-        });
+        mediaPropertyChanged_.store(true);
+    });
 }
