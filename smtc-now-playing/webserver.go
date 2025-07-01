@@ -208,76 +208,70 @@ func (srv *WebServer) Start() {
 	}()
 	go func() {
 		infoUpdate := srv.monitor.GetOutputChannel()
-		for {
-			select {
-			case update, ok := <-infoUpdate:
-				if !ok {
+		for update := range infoUpdate {
+			parts := strings.Split(update, "\t")
+			partCount := len(parts)
+			if partCount < 1 {
+				continue
+			}
+			switch parts[0] {
+			case "I":
+				if partCount < 4 {
 					break
 				}
-				parts := strings.Split(update, "\t")
-				partCount := len(parts)
-				if partCount < 1 {
+				j, err := json.Marshal(&infoDetail{
+					Artist:   unescape(parts[1]),
+					Title:    unescape(parts[2]),
+					AlbumArt: unescape(parts[3]),
+				})
+				if err != nil {
 					continue
 				}
-				switch parts[0] {
-				case "I":
-					if partCount < 4 {
-						break
+				info := string(j)
+				srv.currentMutex.Lock()
+				if info != srv.currentInfo {
+					srv.currentInfo = info
+					srv.currentMutex.Unlock()
+					for _, ch := range srv.infoUpdate {
+						ch <- info
 					}
-					j, err := json.Marshal(&infoDetail{
-						Artist:   unescape(parts[1]),
-						Title:    unescape(parts[2]),
-						AlbumArt: unescape(parts[3]),
-					})
-					if err != nil {
-						continue
+				} else {
+					srv.currentMutex.Unlock()
+				}
+			case "P":
+				if partCount < 4 {
+					break
+				}
+				position, err := strconv.Atoi(parts[1])
+				if err != nil {
+					continue
+				}
+				duration, err := strconv.Atoi(parts[2])
+				if err != nil {
+					continue
+				}
+				status, err := strconv.Atoi(parts[3])
+				if err != nil {
+					continue
+				}
+				j, err := json.Marshal(&progressDetail{
+					Position: position,
+					Duration: duration,
+					Status:   status,
+				})
+				if err != nil {
+					continue
+				}
+				progress := string(j)
+				srv.currentMutex.Lock()
+				if progress != srv.currentProgress {
+					srv.currentProgress = progress
+					srv.currentMutex.Unlock()
+					for _, ch := range srv.progressUpdate {
+						ch <- progress
 					}
-					info := string(j)
-					srv.currentMutex.Lock()
-					if info != srv.currentInfo {
-						srv.currentInfo = info
-						srv.currentMutex.Unlock()
-						for _, ch := range srv.infoUpdate {
-							ch <- info
-						}
-					} else {
-						srv.currentMutex.Unlock()
-					}
-				case "P":
-					if partCount < 4 {
-						break
-					}
-					position, err := strconv.Atoi(parts[1])
-					if err != nil {
-						continue
-					}
-					duration, err := strconv.Atoi(parts[2])
-					if err != nil {
-						continue
-					}
-					status, err := strconv.Atoi(parts[3])
-					if err != nil {
-						continue
-					}
-					j, err := json.Marshal(&progressDetail{
-						Position: position,
-						Duration: duration,
-						Status:   status,
-					})
-					if err != nil {
-						continue
-					}
-					progress := string(j)
-					srv.currentMutex.Lock()
-					if progress != srv.currentProgress {
-						srv.currentProgress = progress
-						srv.currentMutex.Unlock()
-						for _, ch := range srv.progressUpdate {
-							ch <- progress
-						}
-					} else {
-						srv.currentMutex.Unlock()
-					}
+				} else {
+					srv.currentMutex.Unlock()
 				}
 			}
 		}

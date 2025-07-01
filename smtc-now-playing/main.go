@@ -50,5 +50,4 @@ func main() {
 
 	gui := NewGui(g)
 	gui.wnd.RunAsMain()
-	return
 }

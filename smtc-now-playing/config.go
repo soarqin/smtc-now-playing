@@ -17,48 +17,48 @@ type Config struct {
 	AutoStart bool   `json:"autostart"`
 }
 
-func LoadConfig() (*Config, error) {
-	cfg := &Config{
+var config *Config
+
+func init() {
+	config = &Config{
 		Port:      11451,
 		Theme:     "default",
 		AutoStart: false,
 	}
+}
 
+func GetConfig() *Config {
+	return config
+}
+
+func LoadConfig() error {
 	dir := os.Args[0]
 	dir = filepath.Dir(dir)
 	portableConfigPath := filepath.Join(dir, "portable_config.json")
 	if _, err := os.Stat(portableConfigPath); err == nil {
-		err = loadConfigFromFile(portableConfigPath, cfg)
-		if err != nil {
-			return nil, err
-		}
-		return cfg, nil
+		return loadConfigFromFile(portableConfigPath, config)
 	}
 
 	appDataConfigPath := filepath.Join(os.Getenv("APPDATA"), "soarqin", "smtc-now-playing", "config.json")
 	if _, err := os.Stat(appDataConfigPath); err == nil {
-		err = loadConfigFromFile(appDataConfigPath, cfg)
-		if err != nil {
-			return nil, err
-		}
-		return cfg, nil
+		return loadConfigFromFile(appDataConfigPath, config)
 	}
 
-	return cfg, nil
+	return nil
 }
 
-func SaveConfig(cfg *Config) error {
+func SaveConfig() error {
 	dir := os.Args[0]
 	dir = filepath.Dir(dir)
 	portableConfigPath := filepath.Join(dir, "portable_config.json")
 	if _, err := os.Stat(portableConfigPath); err == nil {
-		return saveConfigToFile(portableConfigPath, cfg)
+		return saveConfigToFile(portableConfigPath, config)
 	}
 
 	appDataConfigDir := filepath.Join(os.Getenv("APPDATA"), "soarqin", "smtc-now-playing")
 	os.MkdirAll(appDataConfigDir, 0755)
 	appDataConfigPath := filepath.Join(appDataConfigDir, "config.json")
-	return saveConfigToFile(appDataConfigPath, cfg)
+	return saveConfigToFile(appDataConfigPath, config)
 }
 
 func loadConfigFromFile(path string, cfg *Config) error {

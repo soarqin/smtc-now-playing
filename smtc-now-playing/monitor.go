@@ -77,9 +77,7 @@ func (m *Monitor) internalStart() error {
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			select {
-			case m.errorChan <- fmt.Errorf("stdout scanner error: %w", err):
-			}
+			m.errorChan <- fmt.Errorf("stdout scanner error: %w", err)
 		}
 	}()
 
@@ -106,9 +104,7 @@ func (m *Monitor) StartProcess() error {
 			m.mutex.Unlock()
 
 			if err != nil && m.cancelChan != nil { // Only report error if not cancelled
-				select {
-				case m.errorChan <- fmt.Errorf("process exited with error: %w", err):
-				}
+				m.errorChan <- fmt.Errorf("process exited with error: %w", err)
 				time.Sleep(1 * time.Second)
 				m.mutex.Lock()
 				defer m.mutex.Unlock()
