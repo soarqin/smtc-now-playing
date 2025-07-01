@@ -57,10 +57,15 @@ static std::wstring escape(const std::wstring& str) {
 
 template<typename T>
 inline static std::tuple<AsyncStatus, T> WaitForAsyncOperation(IAsyncOperation<T> operation) {
-    AsyncStatus status;
-    while ((status = operation.Status()) == AsyncStatus::Started) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    if (operation.Status() != AsyncStatus::Completed) {
+        HANDLE hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        operation.Completed([&](const IAsyncOperation<T>& sender, const AsyncStatus& status) {
+            SetEvent(hEvent);
+        });
+        WaitForSingleObject(hEvent, INFINITE);
+        CloseHandle(hEvent);
     }
+    auto status = operation.Status();
     if (status == AsyncStatus::Completed) {
         return std::make_tuple(status, operation.GetResults());
     }
@@ -69,11 +74,15 @@ inline static std::tuple<AsyncStatus, T> WaitForAsyncOperation(IAsyncOperation<T
 
 template<typename T>
 inline static AsyncStatus WaitForAsyncOperationNoReturn(IAsyncOperation<T> operation) {
-    AsyncStatus status;
-    while ((status = operation.Status()) == AsyncStatus::Started) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (operation.Status() != AsyncStatus::Completed) {
+        HANDLE hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        operation.Completed([&](const IAsyncOperation<T>& sender, const AsyncStatus& status) {
+            SetEvent(hEvent);
+        });
+        WaitForSingleObject(hEvent, INFINITE);
+        CloseHandle(hEvent);
     }
-    return status;
+    return operation.Status();
 }
 
 void Smtc::start() {
