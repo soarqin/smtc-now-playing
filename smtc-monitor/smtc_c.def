@@ -1,0 +1,7 @@
+LIBRARY smtc
+EXPORTS
+  smtc_create
+  smtc_destroy
+  smtc_init
+  smtc_retrieve_dirty_data
+  smtc_update

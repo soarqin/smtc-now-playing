@@ -1,3 +1,5 @@
+//go:build !smtc_test
+
 package main
 
 import (

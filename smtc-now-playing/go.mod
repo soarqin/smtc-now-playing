@@ -1,4 +1,4 @@
-module SmtcNowPlaying
+module smtc-now-playing
 
 go 1.24.3
 
