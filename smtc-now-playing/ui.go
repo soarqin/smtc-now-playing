@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -25,16 +24,16 @@ type Gui struct {
 	btnStart    *ui.Button
 	cbAutoStart *ui.CheckBox
 	infoText    *ui.Edit
-	exigGroup   ProcessExitGroup
-	srv         *WebServer
-	monitor     *Monitor
+	//exigGroup   ProcessExitGroup
+	srv  *WebServer
+	smtc *Smtc
 }
 
 var notifyIcon *NotifyIcon
 var msgTaskbarCreated co.WM
 
 // Creates a new instance of our main window.
-func NewGui(g ProcessExitGroup) *Gui {
+func NewGui( /*g ProcessExitGroup*/ ) *Gui {
 	LoadConfig()
 
 	wnd := ui.NewMain( // create the main window
@@ -98,7 +97,7 @@ func NewGui(g ProcessExitGroup) *Gui {
 			Height(ui.DpiY(100)),
 	)
 
-	me := &Gui{wnd, lblPort, portEdit, ud, lblTheme, themeCombo, btnStart, cbAutoStart, urlText, g, nil, nil}
+	me := &Gui{wnd, lblPort, portEdit, ud, lblTheme, themeCombo, btnStart, cbAutoStart, urlText /*g,*/, nil, nil}
 	me.events()
 	return me
 }
@@ -214,7 +213,7 @@ func (me *Gui) events() {
 			notifyIcon.Dispose()
 			notifyIcon = nil
 		}
-		me.stopProcess()
+		me.stopSmtc()
 	})
 
 	me.themeCombo.On().CbnSelChange(func() {
@@ -224,13 +223,13 @@ func (me *Gui) events() {
 	})
 
 	me.btnStart.On().BnClicked(func() {
-		if me.monitor != nil {
-			me.stopProcess()
+		if me.smtc != nil {
+			me.stopSmtc()
 			return
 		}
 		me.syncConfig()
 		SaveConfig()
-		me.monitorProcess()
+		me.startSmtc()
 	})
 
 	me.cbAutoStart.On().BnClicked(func() {
@@ -248,32 +247,20 @@ func (me *Gui) syncConfig() {
 	config.AutoStart = me.cbAutoStart.IsChecked()
 }
 
-func (me *Gui) monitorProcess() {
+func (me *Gui) startSmtc() {
 	me.btnStart.Hwnd().EnableWindow(false)
-	// Get current directory
-	dir, err := os.Getwd()
-	if err != nil {
-		me.wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)
+	me.smtc = SmtcCreate()
+	if me.smtc.Init() != 0 {
+		me.wnd.Hwnd().MessageBox("Failed to initialize SMTC", "Error", co.MB_ICONERROR)
 		return
 	}
-	me.monitor = NewMonitor(me.exigGroup, filepath.Join(dir, "SmtcMonitor"))
-	err = me.monitor.StartProcess()
-	if err != nil {
-		me.wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)
-		return
-	}
-	monitorErrChan := me.monitor.GetErrorChannel()
-	me.srv = NewWebServer("0.0.0.0", me.portEdit.Text(), me.monitor, me.themeCombo.Text())
+	me.srv = NewWebServer("0.0.0.0", me.portEdit.Text(), me.smtc, me.themeCombo.Text())
 	srvErrChan := me.srv.Error()
 	go func() {
-		for {
-			select {
-			case err := <-srvErrChan:
-				me.infoText.SetText(fmt.Sprintf("Web server error: %v", err))
-				me.stopProcess()
-				return
-			case <-monitorErrChan:
-			}
+		for err := range srvErrChan {
+			me.infoText.SetText(fmt.Sprintf("Web server error: %v", err))
+			me.stopSmtc()
+			return
 		}
 	}()
 	me.srv.Start()
@@ -312,14 +299,13 @@ func (me *Gui) monitorProcess() {
 	me.btnStart.Hwnd().EnableWindow(true)
 }
 
-func (me *Gui) stopProcess() {
+func (me *Gui) stopSmtc() {
 	me.btnStart.Hwnd().EnableWindow(false)
 	if me.srv != nil {
 		me.srv.Stop()
-		me.monitor.Stop()
-		me.monitor.Join()
 		me.srv = nil
-		me.monitor = nil
+		me.smtc.Destroy()
+		me.smtc = nil
 	}
 	me.btnStart.SetText("&Start")
 	me.btnStart.Hwnd().EnableWindow(true)

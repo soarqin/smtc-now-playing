@@ -16,7 +16,7 @@ extern "C" {
 
 SMTC_EXPORT void *smtc_create();
 SMTC_EXPORT void smtc_destroy(void *smtc);
-SMTC_EXPORT void smtc_init(void *smtc);
+SMTC_EXPORT int smtc_init(void *smtc);
 SMTC_EXPORT void smtc_update(void *smtc);
 SMTC_EXPORT int smtc_retrieve_dirty_data(void *smtc, wchar_t *artist, wchar_t *title, wchar_t *thumbnail_path, int *position, int *duration, int *status);
 

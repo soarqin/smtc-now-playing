@@ -23,8 +23,8 @@ func (s *Smtc) Destroy() {
 	C.smtc_destroy(s.smtc)
 }
 
-func (s *Smtc) Init() {
-	C.smtc_init(s.smtc)
+func (s *Smtc) Init() int {
+	return int(C.smtc_init(s.smtc))
 }
 
 func (s *Smtc) Update() {

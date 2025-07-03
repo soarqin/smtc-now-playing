@@ -36,11 +36,11 @@ func main() {
 	// Add .m to PATHEXT
 	os.Setenv("PATHEXT", os.Getenv("PATHEXT")+";.m")
 
-	g, err := NewProcessExitGroup()
-	if err != nil {
-		panic(err)
-	}
-	defer g.Dispose()
+	// g, err := NewProcessExitGroup()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer g.Dispose()
 
 	mutex, err := CreateMutex("org.soardev.SmtcNowPlaying")
 	nullHwnd := win.HWND(0)
@@ -50,6 +50,6 @@ func main() {
 	}
 	defer syscall.CloseHandle(syscall.Handle(mutex))
 
-	gui := NewGui(g)
+	gui := NewGui( /*g*/ )
 	gui.wnd.RunAsMain()
 }

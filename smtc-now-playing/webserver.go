@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 	"sync"
+	"time"
 )
 
 type WebServer struct {
 	httpSrv *http.Server
-	monitor *Monitor
+	smtc    *Smtc
 
 	currentTheme string
 
@@ -38,14 +37,14 @@ type progressDetail struct {
 	Status   int `json:"status"`
 }
 
-func NewWebServer(host string, port string, monitor *Monitor, theme string) *WebServer {
+func NewWebServer(host string, port string, smtc *Smtc, theme string) *WebServer {
 	mux := http.NewServeMux()
 	srv := &WebServer{
 		httpSrv: &http.Server{
 			Addr:    fmt.Sprintf("%s:%s", host, port),
 			Handler: mux,
 		},
-		monitor: monitor,
+		smtc: smtc,
 
 		currentTheme: theme,
 
@@ -207,23 +206,14 @@ func (srv *WebServer) Start() {
 		}
 	}()
 	go func() {
-		infoUpdate := srv.monitor.GetOutputChannel()
-		for update := range infoUpdate {
-			parts := strings.Split(update, "\t")
-			partCount := len(parts)
-			if partCount < 1 {
-				continue
-			}
-			switch parts[0] {
-			case "I":
-				if partCount < 4 {
-					break
-				}
-				j, err := json.Marshal(&infoDetail{
-					Artist:   unescape(parts[1]),
-					Title:    unescape(parts[2]),
-					AlbumArt: unescape(parts[3]),
-				})
+		var info infoDetail
+		var progress progressDetail
+		for {
+			time.Sleep(200 * time.Millisecond)
+			srv.smtc.Update()
+			dirty := srv.smtc.RetrieveDirtyData(&info.Artist, &info.Title, &info.AlbumArt, &progress.Position, &progress.Duration, &progress.Status)
+			if dirty&1 != 0 {
+				j, err := json.Marshal(&info)
 				if err != nil {
 					continue
 				}
@@ -238,27 +228,9 @@ func (srv *WebServer) Start() {
 				} else {
 					srv.currentMutex.Unlock()
 				}
-			case "P":
-				if partCount < 4 {
-					break
-				}
-				position, err := strconv.Atoi(parts[1])
-				if err != nil {
-					continue
-				}
-				duration, err := strconv.Atoi(parts[2])
-				if err != nil {
-					continue
-				}
-				status, err := strconv.Atoi(parts[3])
-				if err != nil {
-					continue
-				}
-				j, err := json.Marshal(&progressDetail{
-					Position: position,
-					Duration: duration,
-					Status:   status,
-				})
+			}
+			if dirty&2 != 0 {
+				j, err := json.Marshal(&progress)
 				if err != nil {
 					continue
 				}
@@ -300,37 +272,37 @@ func (srv *WebServer) SetTheme(theme string) {
 	srv.currentTheme = theme
 }
 
-func unescape(str string) string {
-	result := strings.Builder{}
-	l := len(str)
-	for i := 0; i < l; i++ {
-		c := str[i]
-		if c == '\\' {
-			i++
-			if i >= l {
-				break
-			}
-			switch str[i] {
-			case 'n':
-				result.WriteRune('\n')
-			case 'r':
-				result.WriteRune('\r')
-			case 't':
-				result.WriteRune('\t')
-			case 'v':
-				result.WriteRune('\v')
-			case 'b':
-				result.WriteRune('\b')
-			case 'f':
-				result.WriteRune('\f')
-			case 'a':
-				result.WriteRune('\a')
-			default:
-				result.WriteByte(c)
-			}
-		} else {
-			result.WriteByte(c)
-		}
-	}
-	return result.String()
-}
+// func unescape(str string) string {
+// 	result := strings.Builder{}
+// 	l := len(str)
+// 	for i := 0; i < l; i++ {
+// 		c := str[i]
+// 		if c == '\\' {
+// 			i++
+// 			if i >= l {
+// 				break
+// 			}
+// 			switch str[i] {
+// 			case 'n':
+// 				result.WriteRune('\n')
+// 			case 'r':
+// 				result.WriteRune('\r')
+// 			case 't':
+// 				result.WriteRune('\t')
+// 			case 'v':
+// 				result.WriteRune('\v')
+// 			case 'b':
+// 				result.WriteRune('\b')
+// 			case 'f':
+// 				result.WriteRune('\f')
+// 			case 'a':
+// 				result.WriteRune('\a')
+// 			default:
+// 				result.WriteByte(c)
+// 			}
+// 		} else {
+// 			result.WriteByte(c)
+// 		}
+// 	}
+// 	return result.String()
+// }

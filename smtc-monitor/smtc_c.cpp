@@ -12,8 +12,8 @@ void smtc_destroy(void *smtc) {
     delete static_cast<Smtc*>(smtc);
 }
 
-void smtc_init(void *smtc) {
-    static_cast<Smtc*>(smtc)->init();
+int smtc_init(void *smtc) {
+    return static_cast<Smtc*>(smtc)->init();
 }
 
 void smtc_update(void *smtc) {

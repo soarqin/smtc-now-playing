@@ -131,10 +131,10 @@ inline static AsyncStatus WaitForAsyncOperationNoReturn(IAsyncOperation<T> opera
     return operation.Status();
 }
 
-void Smtc::init() {
+int Smtc::init() {
     auto [status, sessionManager] = WaitForAsyncOperation(GlobalSystemMediaTransportControlsSessionManager::RequestAsync());
     if (status != AsyncStatus::Completed) {
-        return;
+        return -1;
     }
     sessionManager_ = sessionManager;
     currentSession_ = sessionManager_.GetCurrentSession();
@@ -144,6 +144,7 @@ void Smtc::init() {
         mediaChanged_.store(true);
         mediaPropertyChanged_.store(true);
     });
+    return 0;
 }
 
 void Smtc::update() {

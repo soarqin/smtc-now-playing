@@ -16,7 +16,7 @@ public:
     Smtc();
     ~Smtc();
 
-    void init();
+    int init();
     void update();
     /*
      * returns int with bits:
