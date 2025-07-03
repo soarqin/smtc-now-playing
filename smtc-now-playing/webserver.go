@@ -23,6 +23,8 @@ type WebServer struct {
 	progressUpdate       []chan string
 	infoChannelMutex     sync.Mutex
 	progressChannelMutex sync.Mutex
+	albumArtContentType  string
+	albumArtData         []byte
 }
 
 type infoDetail struct {
@@ -54,7 +56,7 @@ func NewWebServer(host string, port string, smtc *Smtc, theme string) *WebServer
 
 	mux.HandleFunc("/info_changed", srv.handleInfoChanged)
 	mux.HandleFunc("/progress_changed", srv.handleProgressChanged)
-	mux.HandleFunc("/image/", srv.handleImage)
+	mux.HandleFunc("/albumArt", srv.handleAlbumArt)
 	mux.HandleFunc("/script/", srv.handleScript)
 	mux.HandleFunc("/", srv.handleStatic)
 
@@ -185,8 +187,13 @@ func (srv *WebServer) handleProgressChanged(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (srv *WebServer) handleImage(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, r.URL.Path[1:])
+func (srv *WebServer) handleAlbumArt(w http.ResponseWriter, r *http.Request) {
+	if len(srv.albumArtData) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", srv.albumArtContentType)
+	w.Write(srv.albumArtData)
 }
 
 func (srv *WebServer) handleStatic(w http.ResponseWriter, r *http.Request) {
@@ -211,39 +218,42 @@ func (srv *WebServer) Start() {
 		for {
 			time.Sleep(200 * time.Millisecond)
 			srv.smtc.Update()
-			dirty := srv.smtc.RetrieveDirtyData(&info.Artist, &info.Title, &info.AlbumArt, &progress.Position, &progress.Duration, &progress.Status)
+			dirty := srv.smtc.RetrieveDirtyData(&info.Artist, &info.Title, &srv.albumArtContentType, &srv.albumArtData, &progress.Position, &progress.Duration, &progress.Status)
 			if dirty&1 != 0 {
-				j, err := json.Marshal(&info)
-				if err != nil {
-					continue
-				}
-				info := string(j)
-				srv.currentMutex.Lock()
-				if info != srv.currentInfo {
-					srv.currentInfo = info
-					srv.currentMutex.Unlock()
-					for _, ch := range srv.infoUpdate {
-						ch <- info
-					}
+				if len(srv.albumArtData) > 0 {
+					info.AlbumArt = "/albumArt"
 				} else {
-					srv.currentMutex.Unlock()
+					info.AlbumArt = ""
+				}
+				j, err := json.Marshal(&info)
+				if err == nil {
+					info := string(j)
+					srv.currentMutex.Lock()
+					if info != srv.currentInfo {
+						srv.currentInfo = info
+						srv.currentMutex.Unlock()
+						for _, ch := range srv.infoUpdate {
+							ch <- info
+						}
+					} else {
+						srv.currentMutex.Unlock()
+					}
 				}
 			}
 			if dirty&2 != 0 {
 				j, err := json.Marshal(&progress)
-				if err != nil {
-					continue
-				}
-				progress := string(j)
-				srv.currentMutex.Lock()
-				if progress != srv.currentProgress {
-					srv.currentProgress = progress
-					srv.currentMutex.Unlock()
-					for _, ch := range srv.progressUpdate {
-						ch <- progress
+				if err == nil {
+					progress := string(j)
+					srv.currentMutex.Lock()
+					if progress != srv.currentProgress {
+						srv.currentProgress = progress
+						srv.currentMutex.Unlock()
+						for _, ch := range srv.progressUpdate {
+							ch <- progress
+						}
+					} else {
+						srv.currentMutex.Unlock()
 					}
-				} else {
-					srv.currentMutex.Unlock()
 				}
 			}
 		}

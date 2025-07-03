@@ -16,4 +16,4 @@ include(ProjectMacros)
 
 project(SmtcNowPlaying)
 
-add_subdirectory(smtc-monitor)
+add_subdirectory(smtc_c)

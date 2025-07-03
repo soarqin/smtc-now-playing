@@ -3,7 +3,6 @@
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.Foundation.h>
 #include <windows.h>
-#include <shlwapi.h>
 
 #include <chrono>
 #include <tuple>
@@ -149,7 +148,6 @@ int Smtc::init() {
 
 void Smtc::update() {
     if (mediaChanged_.exchange(false)) {
-        std::lock_guard lock(sessionMutex_);
         currentProperties_ = nullptr;
         auto oldSession = currentSession_;
         currentSession_ = sessionManager_.GetCurrentSession();
@@ -161,8 +159,8 @@ void Smtc::update() {
                 currentStatus_ = GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed;
                 currentArtist_.clear();
                 currentTitle_.clear();
-                currentThumbnailPath_.clear();
-                currentThumbnailLength_ = 0;
+                currentThumbnailContentType_.clear();
+                currentThumbnailData_.clear();
                 infoDirty_.store(true);
                 progressDirty_.store(true);
             }
@@ -210,17 +208,17 @@ void Smtc::update() {
         }
     }
 
-    std::lock_guard lock(sessionMutex_);
     checkUpdateOfThumbnail();
 }
 
-int Smtc::retrieveDirtyData(wchar_t *artist, wchar_t *title, wchar_t *thumbnailPath, int *position, int *duration, int *status) {
-    std::lock_guard lock(sessionMutex_);
+int Smtc::retrieveDirtyData(const wchar_t **artist, const wchar_t **title, const wchar_t **thumbnailContentType, const uint8_t **thumbnailData, int *thumbnailLength, int *position, int *duration, int *status) {
     int dirty = 0;
     if (infoDirty_.exchange(false)) {
-        StrCpyNW(artist, currentArtist_.c_str(), 256);
-        StrCpyNW(title, currentTitle_.c_str(), 256);
-        StrCpyNW(thumbnailPath, currentThumbnailPath_.c_str(), 1024);
+        *artist = currentArtist_.c_str();
+        *title = currentTitle_.c_str();
+        *thumbnailContentType = currentThumbnailContentType_.c_str();
+        *thumbnailData = currentThumbnailData_.data();
+        *thumbnailLength = (int)currentThumbnailData_.size();
         dirty |= 1;
     }
     if (progressDirty_.exchange(false)) {
@@ -235,14 +233,13 @@ int Smtc::retrieveDirtyData(wchar_t *artist, wchar_t *title, wchar_t *thumbnailP
 void Smtc::getMediaProperties() {
     auto [status, newProperties] = WaitForAsyncOperation(currentSession_.TryGetMediaPropertiesAsync());
     if (status != AsyncStatus::Completed) return;
-    std::lock_guard lock(sessionMutex_);
     currentProperties_ = newProperties;
     if (!currentProperties_) {
         if (!currentArtist_.empty() || !currentTitle_.empty()) {
             currentArtist_.clear();
             currentTitle_.clear();
-            currentThumbnailPath_.clear();
-            currentThumbnailLength_ = 0;
+            currentThumbnailContentType_.clear();
+            currentThumbnailData_.clear();
             infoDirty_.store(true);
         }
         return;
@@ -256,13 +253,13 @@ void Smtc::getMediaProperties() {
         currentTitle_ = escape(newTitle);
         infoDirty_.store(true);
     }
-
-    currentThumbnailLength_ = 0;
+    currentThumbnailContentType_.clear();
+    currentThumbnailData_.clear();
 }
 
 void Smtc::checkUpdateOfThumbnail() {
     bool wasNotEmpty = false;
-    if (!currentThumbnailPath_.empty()) {
+    if (!currentThumbnailData_.empty()) {
         wasNotEmpty = true;
     }
     do {
@@ -280,7 +277,7 @@ void Smtc::checkUpdateOfThumbnail() {
         if (!stream) {
             break;
         }
-        if (currentThumbnailLength_ == (int)stream.Size()) {
+        if (currentThumbnailData_.size() == stream.Size()) {
             return;
         }
         DataReader reader(stream.GetInputStreamAt(0));
@@ -292,28 +289,14 @@ void Smtc::checkUpdateOfThumbnail() {
         auto content = reader.ReadBuffer(bufLen);
         DWORD bytesWritten;
         HANDLE hFile;
-        auto contentType = stream.ContentType();
-        if (contentType == L"image/png") {
-            currentThumbnailPath_ = L"image/thumbnail.png";
-        } else if (contentType.starts_with(L"image/jpeg") || contentType.starts_with(L"image/jpg")) {
-            currentThumbnailPath_ = L"image/thumbnail.jpg";
-        } else {
-            break;
-        }
-        hFile = CreateFileW(currentThumbnailPath_.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (hFile == INVALID_HANDLE_VALUE) {
-            currentThumbnailPath_.clear();
-            break;
-        }
-        WriteFile(hFile, content.data(), (DWORD)content.Length(), &bytesWritten, nullptr);
-        CloseHandle(hFile);
-        currentThumbnailLength_ = (int)bufSize;
+        currentThumbnailContentType_ = stream.ContentType();
+        currentThumbnailData_ = std::vector<uint8_t>(content.data(), content.data() + content.Length());
         infoDirty_.store(true);
         return;
     } while (false);
 
-    currentThumbnailPath_.clear();
-    currentThumbnailLength_ = 0;
+    currentThumbnailContentType_.clear();
+    currentThumbnailData_.clear();
     infoDirty_.store(infoDirty_.load() || wasNotEmpty);
 }
 

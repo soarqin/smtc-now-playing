@@ -31,14 +31,14 @@ function updateTrackInfo(track) {
 
 // Update progress bar and time
 function updateProgress(currentTime, duration, status) {
-    const progress = (currentTime / duration) * 100;
     const progressBar = document.getElementById('progress');
-    if (progressBar) {
-        progressBar.style.width = `${progress}%`;
-    }
     const currentTimeText = document.getElementById('currentTime');
     const totalTimeText = document.getElementById('totalTime');
     if (duration > 0) {
+        const progress = (currentTime / duration) * 100;
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+        }
         if (currentTimeText) {
             currentTimeText.textContent = formatTime(currentTime);
         }
@@ -46,6 +46,9 @@ function updateProgress(currentTime, duration, status) {
             totalTimeText.textContent = formatTime(duration);
         }
     } else {
+        if (progressBar) {
+            progressBar.style.width = '0';
+        }
         if (currentTimeText) {
             currentTimeText.textContent = '';
         }

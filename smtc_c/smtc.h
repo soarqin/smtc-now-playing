@@ -7,6 +7,7 @@
 #include <atomic>
 #include <functional>
 #include <string>
+#include <vector>
 
 using namespace winrt;
 using namespace Windows::Media::Control;
@@ -33,14 +34,7 @@ public:
      *  4: Playing
      *  5: Paused
      */
-    int retrieveDirtyData(wchar_t *artist, wchar_t *title, wchar_t *thumbnailPath, int *position, int *duration, int *status);
-
-    inline const std::wstring &getArtist() const { return currentArtist_; }
-    inline const std::wstring &getTitle() const { return currentTitle_; }
-    inline const std::wstring &getThumbnailPath() const { return currentThumbnailPath_; }
-    inline int getPosition() const { return currentPosition_; }
-    inline int getDuration() const { return currentDuration_; }
-    inline GlobalSystemMediaTransportControlsSessionPlaybackStatus getStatus() const { return currentStatus_; }
+    int retrieveDirtyData(const wchar_t **artist, const wchar_t **title, const wchar_t **thumbnailContentType, const uint8_t **thumbnailData, int *thumbnailLength, int *position, int *duration, int *status);
 
 private:
     void getMediaProperties();
@@ -50,12 +44,11 @@ private:
     GlobalSystemMediaTransportControlsSessionManager sessionManager_ = nullptr;
     GlobalSystemMediaTransportControlsSession currentSession_ = nullptr;
     GlobalSystemMediaTransportControlsSessionMediaProperties currentProperties_ = nullptr;
-    std::mutex sessionMutex_;
 
     std::wstring currentArtist_;
     std::wstring currentTitle_;
-    std::wstring currentThumbnailPath_;
-    int currentThumbnailLength_ = 0;
+    std::wstring currentThumbnailContentType_;
+    std::vector<uint8_t> currentThumbnailData_;
     int currentPosition_ = 0;
     int currentDuration_ = 0;
     GlobalSystemMediaTransportControlsSessionPlaybackStatus currentStatus_ = GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed;
