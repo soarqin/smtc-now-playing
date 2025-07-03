@@ -213,7 +213,7 @@ func (me *Gui) events() {
 			notifyIcon.Dispose()
 			notifyIcon = nil
 		}
-		me.stopSmtc()
+		me.stopWebServer()
 	})
 
 	me.themeCombo.On().CbnSelChange(func() {
@@ -223,13 +223,13 @@ func (me *Gui) events() {
 	})
 
 	me.btnStart.On().BnClicked(func() {
-		if me.smtc != nil {
-			me.stopSmtc()
+		if me.srv != nil {
+			me.stopWebServer()
 			return
 		}
 		me.syncConfig()
 		SaveConfig()
-		me.startSmtc()
+		me.startWebServer()
 	})
 
 	me.cbAutoStart.On().BnClicked(func() {
@@ -247,19 +247,14 @@ func (me *Gui) syncConfig() {
 	config.AutoStart = me.cbAutoStart.IsChecked()
 }
 
-func (me *Gui) startSmtc() {
+func (me *Gui) startWebServer() {
 	me.btnStart.Hwnd().EnableWindow(false)
-	me.smtc = SmtcCreate()
-	if me.smtc.Init() != 0 {
-		me.wnd.Hwnd().MessageBox("Failed to initialize SMTC", "Error", co.MB_ICONERROR)
-		return
-	}
-	me.srv = NewWebServer("0.0.0.0", me.portEdit.Text(), me.smtc, me.themeCombo.Text())
+	me.srv = NewWebServer("0.0.0.0", me.portEdit.Text(), me.themeCombo.Text())
 	srvErrChan := me.srv.Error()
 	go func() {
 		for err := range srvErrChan {
 			me.infoText.SetText(fmt.Sprintf("Web server error: %v", err))
-			me.stopSmtc()
+			me.stopWebServer()
 			return
 		}
 	}()
@@ -299,13 +294,11 @@ func (me *Gui) startSmtc() {
 	me.btnStart.Hwnd().EnableWindow(true)
 }
 
-func (me *Gui) stopSmtc() {
+func (me *Gui) stopWebServer() {
 	me.btnStart.Hwnd().EnableWindow(false)
 	if me.srv != nil {
 		me.srv.Stop()
 		me.srv = nil
-		me.smtc.Destroy()
-		me.smtc = nil
 	}
 	me.btnStart.SetText("&Start")
 	me.btnStart.Hwnd().EnableWindow(true)

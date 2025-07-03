@@ -19,6 +19,8 @@ type WebServer struct {
 	currentProgress string
 
 	errorChan            chan error
+	quitChan             chan struct{}
+	waitGroup            sync.WaitGroup
 	infoUpdate           []chan string
 	progressUpdate       []chan string
 	infoChannelMutex     sync.Mutex
@@ -39,7 +41,12 @@ type progressDetail struct {
 	Status   int `json:"status"`
 }
 
-func NewWebServer(host string, port string, smtc *Smtc, theme string) *WebServer {
+func NewWebServer(host string, port string, theme string) *WebServer {
+	smtc := SmtcCreate()
+	if smtc.Init() != 0 {
+		return nil
+	}
+
 	mux := http.NewServeMux()
 	srv := &WebServer{
 		httpSrv: &http.Server{
@@ -206,53 +213,64 @@ func (srv *WebServer) handleScript(w http.ResponseWriter, r *http.Request) {
 
 func (srv *WebServer) Start() {
 	srv.errorChan = make(chan error, 1)
+	srv.quitChan = make(chan struct{}, 1)
+	srv.waitGroup.Add(2)
 	go func() {
 		err := srv.httpSrv.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
 			srv.errorChan <- err
 		}
+		srv.waitGroup.Done()
 	}()
 	go func() {
 		var info infoDetail
 		var progress progressDetail
+
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
 		for {
-			time.Sleep(200 * time.Millisecond)
-			srv.smtc.Update()
-			dirty := srv.smtc.RetrieveDirtyData(&info.Artist, &info.Title, &srv.albumArtContentType, &srv.albumArtData, &progress.Position, &progress.Duration, &progress.Status)
-			if dirty&1 != 0 {
-				if len(srv.albumArtData) > 0 {
-					info.AlbumArt = "/albumArt"
-				} else {
-					info.AlbumArt = ""
-				}
-				j, err := json.Marshal(&info)
-				if err == nil {
-					info := string(j)
-					srv.currentMutex.Lock()
-					if info != srv.currentInfo {
-						srv.currentInfo = info
-						srv.currentMutex.Unlock()
-						for _, ch := range srv.infoUpdate {
-							ch <- info
-						}
+			select {
+			case <-srv.quitChan:
+				srv.waitGroup.Done()
+				return
+			case <-ticker.C:
+				srv.smtc.Update()
+				dirty := srv.smtc.RetrieveDirtyData(&info.Artist, &info.Title, &srv.albumArtContentType, &srv.albumArtData, &progress.Position, &progress.Duration, &progress.Status)
+				if dirty&1 != 0 {
+					if len(srv.albumArtData) > 0 {
+						info.AlbumArt = "/albumArt"
 					} else {
-						srv.currentMutex.Unlock()
+						info.AlbumArt = ""
+					}
+					j, err := json.Marshal(&info)
+					if err == nil {
+						info := string(j)
+						srv.currentMutex.Lock()
+						if info != srv.currentInfo {
+							srv.currentInfo = info
+							srv.currentMutex.Unlock()
+							for _, ch := range srv.infoUpdate {
+								ch <- info
+							}
+						} else {
+							srv.currentMutex.Unlock()
+						}
 					}
 				}
-			}
-			if dirty&2 != 0 {
-				j, err := json.Marshal(&progress)
-				if err == nil {
-					progress := string(j)
-					srv.currentMutex.Lock()
-					if progress != srv.currentProgress {
-						srv.currentProgress = progress
-						srv.currentMutex.Unlock()
-						for _, ch := range srv.progressUpdate {
-							ch <- progress
+				if dirty&2 != 0 {
+					j, err := json.Marshal(&progress)
+					if err == nil {
+						progress := string(j)
+						srv.currentMutex.Lock()
+						if progress != srv.currentProgress {
+							srv.currentProgress = progress
+							srv.currentMutex.Unlock()
+							for _, ch := range srv.progressUpdate {
+								ch <- progress
+							}
+						} else {
+							srv.currentMutex.Unlock()
 						}
-					} else {
-						srv.currentMutex.Unlock()
 					}
 				}
 			}
@@ -267,7 +285,10 @@ func (srv *WebServer) Stop() {
 	for _, ch := range srv.progressUpdate {
 		close(ch)
 	}
+	close(srv.quitChan)
 	srv.httpSrv.Close()
+	srv.waitGroup.Wait()
+	srv.smtc.Destroy()
 }
 
 func (srv *WebServer) Address() string {
