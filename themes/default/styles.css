@@ -30,12 +30,14 @@ body {
     border-radius: 12px;
     padding: 20px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    overflow: visible;
 }
 
 .track-container {
     display: flex;
     gap: 20px;
     margin-bottom: 20px;
+    overflow: visible;
 }
 
 .album-art {
@@ -57,11 +59,29 @@ body {
     display: flex;
     flex-direction: column;
     justify-content: center;
+    flex: 1;
+    min-width: 0;
+    overflow: visible;
+}
+
+.text-wrapper {
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.text-wrapper:last-child {
+    margin-bottom: 0;
+}
+
+.track-info h2, .track-info p {
+    white-space: nowrap;
+    position: relative;
+    width: 100%;
+    margin: 0;
 }
 
 .track-info h2 {
     font-size: 1.5rem;
-    margin-bottom: 8px;
     color: #ffffff;
 }
 
@@ -70,6 +90,31 @@ body {
     color: #c3c3c3;
 }
 
+.track-info h2.scroll, .track-info p.scroll {
+    animation: scroll-text 20s linear infinite;
+}
+
+@keyframes scroll-text {
+    0% {
+        transform: translateX(0);
+    }
+    5% {
+        transform: translateX(0);
+    }
+    45% {
+        transform: translateX(var(--scroll-distance, -100%));
+    }
+    55% {
+        transform: translateX(var(--scroll-distance, -100%));
+    }
+    95% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(0);
+    }
+}
+    
 .progress-bar {
     width: 100%;
     height: 4px;

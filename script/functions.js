@@ -5,15 +5,31 @@ function formatTime(seconds) {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
+// Check if text overflows and add scroll animation if needed
+function checkTextOverflow(element) {
+    if (element.scrollWidth > element.clientWidth) {
+        const scrollDistance = element.scrollWidth - element.clientWidth;
+        element.style.setProperty('--scroll-distance', `-${scrollDistance}px`);
+        element.classList.add('scroll');
+    } else {
+        element.classList.remove('scroll');
+        element.style.removeProperty('--scroll-distance');
+    }
+}
+
 // Update the UI with track information
 function updateTrackInfo(track) {
     const trackName = document.getElementById('trackName');
     const artistName = document.getElementById('artistName');
     if (trackName) {
         trackName.textContent = track.title ? ((artistName || !track.artist) ? track.title : (track.artist + ' - ' + track.title)) : '未播放';
+        // Check for overflow after updating text
+        setTimeout(() => checkTextOverflow(trackName), 0);
     }
     if (artistName) {
         artistName.textContent = track.artist || '未知艺术家';
+        // Check for overflow after updating text
+        setTimeout(() => checkTextOverflow(artistName), 0);
     }
     const albumArtImg = document.getElementById('albumArt');
     if (!albumArtImg) {
@@ -77,31 +93,35 @@ function updateProgress(currentTime, duration, status) {
     })();
 }
 
-const infoChangedEvt = new EventSource("/info_changed")
-const progressChangedEvt = new EventSource("/progress_changed")
-
-infoChangedEvt.onmessage = function (event) {
-    const data = JSON.parse(event.data)
-    updateTrackInfo(data)
-}
-
-infoChangedEvt.onerror = function (event) {
-    console.error("EventSource failed:", event)
-    infoChangedEvt.close()
+document.addEventListener('DOMContentLoaded', function() {
     setTimeout(() => {
-        infoChangedEvt = new EventSource("/info_changed")
-    }, 1000)
-}
+        const infoChangedEvt = new EventSource("/info_changed")
+        const progressChangedEvt = new EventSource("/progress_changed")
 
-progressChangedEvt.onmessage = function (event) {
-    const data = JSON.parse(event.data)
-    updateProgress(data.position, data.duration, data.status)
-}
-
-progressChangedEvt.onerror = function (event) {
-    console.error("EventSource failed:", event)
-    progressChangedEvt.close()
-    setTimeout(() => {
-        progressChangedEvt = new EventSource("/progress_changed")
-    }, 1000)
-}
+        infoChangedEvt.onmessage = function (event) {
+            const data = JSON.parse(event.data)
+            updateTrackInfo(data)
+        }
+        
+        infoChangedEvt.onerror = function (event) {
+            console.error("EventSource failed:", event)
+            infoChangedEvt.close()
+            setTimeout(() => {
+                infoChangedEvt = new EventSource("/info_changed")
+            }, 1000)
+        }
+        
+        progressChangedEvt.onmessage = function (event) {
+            const data = JSON.parse(event.data)
+            updateProgress(data.position, data.duration, data.status)
+        }
+        
+        progressChangedEvt.onerror = function (event) {
+            console.error("EventSource failed:", event)
+            progressChangedEvt.close()
+            setTimeout(() => {
+                progressChangedEvt = new EventSource("/progress_changed")
+            }, 1000)
+        }
+    }, 100);
+});
