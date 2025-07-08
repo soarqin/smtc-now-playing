@@ -10,9 +10,11 @@ function checkTextOverflow(element) {
     if (element.scrollWidth > element.clientWidth) {
         const scrollDistance = element.scrollWidth - element.clientWidth;
         element.style.setProperty('--scroll-distance', `-${scrollDistance}px`);
+        element.classList.remove('center');
         element.classList.add('scroll');
     } else {
         element.classList.remove('scroll');
+        element.classList.add('center');
         element.style.removeProperty('--scroll-distance');
     }
 }
