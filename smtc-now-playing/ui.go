@@ -15,15 +15,16 @@ import (
 
 // This struct represents our main window.
 type Gui struct {
-	wnd         *ui.Main
-	lblPort     *ui.Static
-	portEdit    *ui.Edit
-	portUd      *ui.UpDown
-	lblTheme    *ui.Static
-	themeCombo  *ui.ComboBox
-	btnStart    *ui.Button
-	cbAutoStart *ui.CheckBox
-	infoText    *ui.Edit
+	wnd              *ui.Main
+	lblPort          *ui.Static
+	portEdit         *ui.Edit
+	portUd           *ui.UpDown
+	lblTheme         *ui.Static
+	themeCombo       *ui.ComboBox
+	btnStart         *ui.Button
+	cbAutoStart      *ui.CheckBox
+	cbStartMinimized *ui.CheckBox
+	infoText         *ui.Edit
 	//exigGroup   ProcessExitGroup
 	srv  *WebServer
 	smtc *Smtc
@@ -36,10 +37,14 @@ var msgTaskbarCreated co.WM
 func NewGui( /*g ProcessExitGroup*/ ) *Gui {
 	LoadConfig()
 
+	optsMain := ui.OptsMain()
+	if config.StartMinimized {
+		optsMain.CmdShow(co.SW_HIDE)
+	}
 	wnd := ui.NewMain( // create the main window
-		ui.OptsMain().
+		optsMain.
 			Title("SMTC Now Playing").
-			Size(ui.Dpi(370, 200)).
+			Size(ui.Dpi(370, 220)).
 			ClassIconId(101), // ID of icon resource, see resources folder
 	)
 
@@ -87,17 +92,23 @@ func NewGui( /*g ProcessExitGroup*/ ) *Gui {
 			Text("Auto start server").
 			Position(ui.Dpi(10, 50)),
 	)
+	cbStartMinimized := ui.NewCheckBox(
+		wnd,
+		ui.OptsCheckBox().
+			Text("Start minimized").
+			Position(ui.Dpi(10, 70)),
+	)
 	urlText := ui.NewEdit(
 		wnd,
 		ui.OptsEdit().
 			CtrlStyle(co.ES_AUTOHSCROLL|co.ES_READONLY|co.ES_MULTILINE|co.ES_AUTOVSCROLL|co.ES(co.WS_VSCROLL)).
 			Text("").
-			Position(ui.Dpi(10, 80)).
+			Position(ui.Dpi(10, 100)).
 			Width(ui.DpiX(350)).
 			Height(ui.DpiY(100)),
 	)
 
-	me := &Gui{wnd, lblPort, portEdit, ud, lblTheme, themeCombo, btnStart, cbAutoStart, urlText /*g,*/, nil, nil}
+	me := &Gui{wnd, lblPort, portEdit, ud, lblTheme, themeCombo, btnStart, cbAutoStart, cbStartMinimized, urlText /*g,*/, nil, nil}
 	me.events()
 	return me
 }
@@ -107,7 +118,7 @@ func (me *Gui) events() {
 		me.portUd.SetValue(config.Port)
 		me.portEdit.SetText(fmt.Sprintf("%d", config.Port))
 		me.cbAutoStart.SetCheck(config.AutoStart)
-
+		me.cbStartMinimized.SetCheck(config.StartMinimized)
 		// List themes in folder and add them to combobox
 		themes, err := os.ReadDir("themes")
 		if err != nil {
@@ -236,6 +247,11 @@ func (me *Gui) events() {
 		me.syncConfig()
 		SaveConfig()
 	})
+
+	me.cbStartMinimized.On().BnClicked(func() {
+		me.syncConfig()
+		SaveConfig()
+	})
 }
 
 func (me *Gui) syncConfig() {
@@ -245,6 +261,7 @@ func (me *Gui) syncConfig() {
 	}
 	config.Theme = me.themeCombo.Text()
 	config.AutoStart = me.cbAutoStart.IsChecked()
+	config.StartMinimized = me.cbStartMinimized.IsChecked()
 }
 
 func (me *Gui) startWebServer() {
@@ -300,6 +317,7 @@ func (me *Gui) stopWebServer() {
 		me.srv.Stop()
 		me.srv = nil
 	}
+	me.infoText.SetText("")
 	me.btnStart.SetText("&Start")
 	me.btnStart.Hwnd().EnableWindow(true)
 }

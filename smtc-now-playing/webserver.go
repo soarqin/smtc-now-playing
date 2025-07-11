@@ -279,6 +279,8 @@ func (srv *WebServer) Start() {
 }
 
 func (srv *WebServer) Stop() {
+	srv.currentInfo = ""
+	srv.currentProgress = ""
 	for _, ch := range srv.infoUpdate {
 		close(ch)
 	}
