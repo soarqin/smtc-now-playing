@@ -51,5 +51,5 @@ func main() {
 	defer syscall.CloseHandle(syscall.Handle(mutex))
 
 	gui := NewGui( /*g*/ )
-	gui.wnd.RunAsMain()
+	os.Exit(gui.wnd.RunAsMain())
 }
