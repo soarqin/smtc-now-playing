@@ -1,3 +1,32 @@
+// Parse URL parameters and set page max width
+function setElementWidthsFromGETArgs() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const maxWidth = urlParams.get('maxWidth');
+    const artWidth = urlParams.get('artWidth');
+
+    if (maxWidth) {
+        // Convert to number and validate
+        const width = parseInt(maxWidth);
+        if (!isNaN(width) && width > 0) {
+            // Set max-width on the container
+            const container = document.querySelector('.container');
+            if (container) {
+                container.style.maxWidth = width + 'px';
+            }
+        }
+    }
+    if (artWidth) {
+        const width = parseInt(artWidth);
+        if (!isNaN(width) && width > 0) {
+            const albumArt = document.querySelector('.album-art');
+            if (albumArt) {
+                albumArt.style.width = width + 'px';
+                albumArt.style.height = width + 'px';
+            }
+        }
+    }
+}
+
 // Format time in MM:SS format
 function formatTime(seconds) {
     const minutes = Math.floor(seconds / 60);
@@ -95,35 +124,29 @@ function updateProgress(currentTime, duration, status) {
     })();
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(() => {
-        const infoChangedEvt = new EventSource("/info_changed")
-        const progressChangedEvt = new EventSource("/progress_changed")
+function addEventSource(eventSourceName, onmessage) {
+    const eventSource = new EventSource(eventSourceName)
+    eventSource.onmessage = onmessage
+    eventSource.onerror = function (event) {
+        console.error("EventSource " + eventSourceName + " failed:", event)
+        eventSource.close()
+        setTimeout(() => {
+            eventSource = addEventSource(eventSourceName, onmessage)
+        }, 1000)
+    }
+    return eventSource
+}
 
-        infoChangedEvt.onmessage = function (event) {
+document.addEventListener('DOMContentLoaded', function() {
+    setElementWidthsFromGETArgs(); // Call the new function here
+    setTimeout(() => {
+        const infoChangedEvt = addEventSource("/info_changed", function (event) {
             const data = JSON.parse(event.data)
             updateTrackInfo(data)
-        }
-        
-        infoChangedEvt.onerror = function (event) {
-            console.error("EventSource failed:", event)
-            infoChangedEvt.close()
-            setTimeout(() => {
-                infoChangedEvt = new EventSource("/info_changed")
-            }, 1000)
-        }
-        
-        progressChangedEvt.onmessage = function (event) {
+        })
+        const progressChangedEvt = addEventSource("/progress_changed", function (event) {
             const data = JSON.parse(event.data)
             updateProgress(data.position, data.duration, data.status)
-        }
-        
-        progressChangedEvt.onerror = function (event) {
-            console.error("EventSource failed:", event)
-            progressChangedEvt.close()
-            setTimeout(() => {
-                progressChangedEvt = new EventSource("/progress_changed")
-            }, 1000)
-        }
+        })
     }, 100);
 });

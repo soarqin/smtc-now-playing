@@ -106,43 +106,36 @@ func (srv *WebServer) removeProgressUpdateChannel(ch chan string) {
 	}
 }
 
-func (srv *WebServer) handleInfoChanged(w http.ResponseWriter, r *http.Request) {
+func writeSSEHeader(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+}
 
-	ch := srv.addInfoUpdateChannel()
-
-	clientGone := r.Context().Done()
-	rc := http.NewResponseController(w)
-	defer srv.removeInfoUpdateChannel(ch)
-
-	srv.currentMutex.Lock()
-	info := srv.currentInfo
-	srv.currentMutex.Unlock()
-	_, err := fmt.Fprintf(w, "data: %v\n\n", info)
+func writeSSEData(w http.ResponseWriter, rc *http.ResponseController, data string) error {
+	_, err := fmt.Fprintf(w, "data: %v\n\n", data)
 	if err != nil {
-		return
+		return err
 	}
 	err = rc.Flush()
 	if err != nil {
-		return
+		return err
 	}
+	return nil
+}
 
+func loopSSE(w http.ResponseWriter, rc *http.ResponseController, r *http.Request, ch chan string) {
+	clientGone := r.Context().Done()
 	for {
 		select {
 		case <-clientGone:
 			return
-		case update, ok := <-ch:
+		case data, ok := <-ch:
 			if !ok {
 				return
 			}
-			_, err := fmt.Fprintf(w, "data: %v\n\n", update)
-			if err != nil {
-				return
-			}
-			err = rc.Flush()
+			err := writeSSEData(w, rc, data)
 			if err != nil {
 				return
 			}
@@ -150,48 +143,42 @@ func (srv *WebServer) handleInfoChanged(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (srv *WebServer) handleProgressChanged(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+func (srv *WebServer) handleInfoChanged(w http.ResponseWriter, r *http.Request) {
+	writeSSEHeader(w)
 
-	ch := srv.addProgressUpdateChannel()
-
-	clientGone := r.Context().Done()
 	rc := http.NewResponseController(w)
-	defer srv.removeProgressUpdateChannel(ch)
+
+	srv.currentMutex.Lock()
+	info := srv.currentInfo
+	srv.currentMutex.Unlock()
+	err := writeSSEData(w, rc, info)
+	if err != nil {
+		return
+	}
+
+	ch := srv.addInfoUpdateChannel()
+	defer srv.removeInfoUpdateChannel(ch)
+
+	loopSSE(w, rc, r, ch)
+}
+
+func (srv *WebServer) handleProgressChanged(w http.ResponseWriter, r *http.Request) {
+	writeSSEHeader(w)
+
+	rc := http.NewResponseController(w)
 
 	srv.currentMutex.Lock()
 	progress := srv.currentProgress
 	srv.currentMutex.Unlock()
-	_, err := fmt.Fprintf(w, "data: %v\n\n", progress)
-	if err != nil {
-		return
-	}
-	err = rc.Flush()
+	err := writeSSEData(w, rc, progress)
 	if err != nil {
 		return
 	}
 
-	for {
-		select {
-		case <-clientGone:
-			return
-		case update, ok := <-ch:
-			if !ok {
-				return
-			}
-			_, err := fmt.Fprintf(w, "data: %v\n\n", update)
-			if err != nil {
-				return
-			}
-			err = rc.Flush()
-			if err != nil {
-				return
-			}
-		}
-	}
+	ch := srv.addProgressUpdateChannel()
+	defer srv.removeProgressUpdateChannel(ch)
+
+	loopSSE(w, rc, r, ch)
 }
 
 func (srv *WebServer) handleAlbumArt(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +195,7 @@ func (srv *WebServer) handleStatic(w http.ResponseWriter, r *http.Request) {
 }
 
 func (srv *WebServer) handleScript(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, fmt.Sprintf("%s", r.URL.Path[1:]))
+	http.ServeFile(w, r, r.URL.Path[1:])
 }
 
 func (srv *WebServer) Start() {
