@@ -61,8 +61,7 @@ func NewWebServer(host string, port string, theme string) *WebServer {
 		progressUpdate: make([]chan string, 0),
 	}
 
-	mux.HandleFunc("/info_changed", srv.handleInfoChanged)
-	mux.HandleFunc("/progress_changed", srv.handleProgressChanged)
+	mux.HandleFunc("/update_event", srv.handleUpdateEvent)
 	mux.HandleFunc("/albumArt", srv.handleAlbumArt)
 	mux.HandleFunc("/script/", srv.handleScript)
 	mux.HandleFunc("/", srv.handleStatic)
@@ -125,7 +124,29 @@ func writeSSEData(w http.ResponseWriter, rc *http.ResponseController, data strin
 	return nil
 }
 
-func loopSSE(w http.ResponseWriter, rc *http.ResponseController, r *http.Request, ch chan string) {
+func (srv *WebServer) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
+	writeSSEHeader(w)
+
+	rc := http.NewResponseController(w)
+
+	srv.currentMutex.Lock()
+	info := srv.currentInfo
+	progress := srv.currentProgress
+	srv.currentMutex.Unlock()
+	err := writeSSEData(w, rc, info)
+	if err != nil {
+		return
+	}
+	err = writeSSEData(w, rc, progress)
+	if err != nil {
+		return
+	}
+
+	ch := srv.addInfoUpdateChannel()
+	defer srv.removeInfoUpdateChannel(ch)
+	ch2 := srv.addProgressUpdateChannel()
+	defer srv.removeProgressUpdateChannel(ch2)
+
 	clientGone := r.Context().Done()
 	for {
 		select {
@@ -139,46 +160,16 @@ func loopSSE(w http.ResponseWriter, rc *http.ResponseController, r *http.Request
 			if err != nil {
 				return
 			}
+		case data, ok := <-ch2:
+			if !ok {
+				return
+			}
+			err := writeSSEData(w, rc, data)
+			if err != nil {
+				return
+			}
 		}
 	}
-}
-
-func (srv *WebServer) handleInfoChanged(w http.ResponseWriter, r *http.Request) {
-	writeSSEHeader(w)
-
-	rc := http.NewResponseController(w)
-
-	srv.currentMutex.Lock()
-	info := srv.currentInfo
-	srv.currentMutex.Unlock()
-	err := writeSSEData(w, rc, info)
-	if err != nil {
-		return
-	}
-
-	ch := srv.addInfoUpdateChannel()
-	defer srv.removeInfoUpdateChannel(ch)
-
-	loopSSE(w, rc, r, ch)
-}
-
-func (srv *WebServer) handleProgressChanged(w http.ResponseWriter, r *http.Request) {
-	writeSSEHeader(w)
-
-	rc := http.NewResponseController(w)
-
-	srv.currentMutex.Lock()
-	progress := srv.currentProgress
-	srv.currentMutex.Unlock()
-	err := writeSSEData(w, rc, progress)
-	if err != nil {
-		return
-	}
-
-	ch := srv.addProgressUpdateChannel()
-	defer srv.removeProgressUpdateChannel(ch)
-
-	loopSSE(w, rc, r, ch)
 }
 
 func (srv *WebServer) handleAlbumArt(w http.ResponseWriter, r *http.Request) {
@@ -229,7 +220,13 @@ func (srv *WebServer) Start() {
 					} else {
 						info.AlbumArt = ""
 					}
-					j, err := json.Marshal(&info)
+					j, err := json.Marshal(&struct {
+						Type string      `json:"type"`
+						Data *infoDetail `json:"data"`
+					}{
+						Type: "info",
+						Data: &info,
+					})
 					if err == nil {
 						info := string(j)
 						srv.currentMutex.Lock()
@@ -245,7 +242,13 @@ func (srv *WebServer) Start() {
 					}
 				}
 				if dirty&2 != 0 {
-					j, err := json.Marshal(&progress)
+					j, err := json.Marshal(&struct {
+						Type string          `json:"type"`
+						Data *progressDetail `json:"data"`
+					}{
+						Type: "progress",
+						Data: &progress,
+					})
 					if err == nil {
 						progress := string(j)
 						srv.currentMutex.Lock()

@@ -140,13 +140,18 @@ function addEventSource(eventSourceName, onmessage) {
 document.addEventListener('DOMContentLoaded', function() {
     setElementWidthsFromGETArgs(); // Call the new function here
     setTimeout(() => {
-        const infoChangedEvt = addEventSource("/info_changed", function (event) {
+        const infoChangedEvt = addEventSource("/update_event", function (event) {
             const data = JSON.parse(event.data)
-            updateTrackInfo(data)
-        })
-        const progressChangedEvt = addEventSource("/progress_changed", function (event) {
-            const data = JSON.parse(event.data)
-            updateProgress(data.position, data.duration, data.status)
+            switch (data.type) {
+                case 'info':
+                    updateTrackInfo(data.data)
+                    break
+                case 'progress':
+                    updateProgress(data.data.position, data.data.duration, data.data.status)
+                    break
+                default:
+                    break
+            }
         })
     }, 100);
 });
