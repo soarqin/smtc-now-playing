@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strconv"
@@ -11,31 +12,37 @@ import (
 	"github.com/rodrigocfd/windigo/ui"
 	"github.com/rodrigocfd/windigo/win"
 	"github.com/rodrigocfd/windigo/win/co"
+	"github.com/soarqin/go-webview2"
 )
 
 // This struct represents our main window.
 type Gui struct {
-	wnd              *ui.Main
-	lblPort          *ui.Static
-	portEdit         *ui.Edit
-	portUd           *ui.UpDown
-	lblTheme         *ui.Static
-	themeCombo       *ui.ComboBox
-	btnStart         *ui.Button
-	cbAutoStart      *ui.CheckBox
-	cbStartMinimized *ui.CheckBox
-	infoText         *ui.Edit
-	//exigGroup   ProcessExitGroup
-	srv  *WebServer
-	smtc *Smtc
+	wnd                  *ui.Main
+	lblPort              *ui.Static
+	portEdit             *ui.Edit
+	portUd               *ui.UpDown
+	lblTheme             *ui.Static
+	themeCombo           *ui.ComboBox
+	btnStart             *ui.Button
+	cbAutoStart          *ui.CheckBox
+	cbStartMinimized     *ui.CheckBox
+	cbShowPreviewWindow  *ui.CheckBox
+	cbPreviewAlwaysOnTop *ui.CheckBox
+	infoText             *ui.Edit
+
+	srv        *WebServer
+	smtc       *Smtc
+	webViewWin webview2.WebView
 }
 
-var notifyIcon *NotifyIcon
-var msgTaskbarCreated co.WM
+var (
+	notifyIcon        *NotifyIcon
+	msgTaskbarCreated co.WM
+)
 
 // Creates a new instance of our main window.
 func NewGui( /*g ProcessExitGroup*/ ) *Gui {
-	LoadConfig()
+	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--enable-features=msWebView2EnableDraggableRegions")
 
 	optsMain := ui.OptsMain()
 	if config.StartMinimized {
@@ -44,7 +51,7 @@ func NewGui( /*g ProcessExitGroup*/ ) *Gui {
 	wnd := ui.NewMain( // create the main window
 		optsMain.
 			Title("SMTC Now Playing").
-			Size(ui.Dpi(370, 220)).
+			Size(ui.Dpi(370, 260)).
 			ClassIconId(101), // ID of icon resource, see resources folder
 	)
 
@@ -98,17 +105,29 @@ func NewGui( /*g ProcessExitGroup*/ ) *Gui {
 			Text("Start minimized").
 			Position(ui.Dpi(10, 70)),
 	)
+	cbShowPreviewWindow := ui.NewCheckBox(
+		wnd,
+		ui.OptsCheckBox().
+			Text("Show preview").
+			Position(ui.Dpi(10, 90)),
+	)
+	cbPreviewAlwaysOnTop := ui.NewCheckBox(
+		wnd,
+		ui.OptsCheckBox().
+			Text("Preview always on top").
+			Position(ui.Dpi(10, 110)),
+	)
 	urlText := ui.NewEdit(
 		wnd,
 		ui.OptsEdit().
 			CtrlStyle(co.ES_AUTOHSCROLL|co.ES_READONLY|co.ES_MULTILINE|co.ES_AUTOVSCROLL|co.ES(co.WS_VSCROLL)).
 			Text("").
-			Position(ui.Dpi(10, 100)).
+			Position(ui.Dpi(10, 140)).
 			Width(ui.DpiX(350)).
 			Height(ui.DpiY(100)),
 	)
 
-	me := &Gui{wnd, lblPort, portEdit, ud, lblTheme, themeCombo, btnStart, cbAutoStart, cbStartMinimized, urlText /*g,*/, nil, nil}
+	me := &Gui{wnd, lblPort, portEdit, ud, lblTheme, themeCombo, btnStart, cbAutoStart, cbStartMinimized, cbShowPreviewWindow, cbPreviewAlwaysOnTop, urlText /*g,*/, nil, nil, nil}
 	me.events()
 	return me
 }
@@ -119,6 +138,8 @@ func (me *Gui) events() {
 		me.portEdit.SetText(fmt.Sprintf("%d", config.Port))
 		me.cbAutoStart.SetCheck(config.AutoStart)
 		me.cbStartMinimized.SetCheck(config.StartMinimized)
+		me.cbShowPreviewWindow.SetCheck(config.ShowPreviewWindow)
+		me.cbPreviewAlwaysOnTop.SetCheck(config.PreviewAlwaysOnTop)
 		// List themes in folder and add them to combobox
 		themes, err := os.ReadDir("themes")
 		if err != nil {
@@ -252,6 +273,35 @@ func (me *Gui) events() {
 		me.syncConfig()
 		SaveConfig()
 	})
+
+	me.cbShowPreviewWindow.On().BnClicked(func() {
+		me.syncConfig()
+		SaveConfig()
+		if me.srv == nil {
+			return
+		}
+		if me.cbShowPreviewWindow.IsChecked() {
+			me.createWebView()
+		} else {
+			me.destroyWebView()
+		}
+	})
+
+	me.cbPreviewAlwaysOnTop.On().BnClicked(func() {
+		me.syncConfig()
+		SaveConfig()
+		if me.webViewWin == nil {
+			return
+		}
+		me.updateWebViewAlwaysOnTop()
+	})
+
+	me.wnd.On().Wm(0x8000, func(p ui.Wm) uintptr {
+		if me.webViewWin != nil {
+			me.webViewWin.ProcessDispatchQueue()
+		}
+		return 0
+	})
 }
 
 func (me *Gui) syncConfig() {
@@ -262,6 +312,8 @@ func (me *Gui) syncConfig() {
 	config.Theme = me.themeCombo.Text()
 	config.AutoStart = me.cbAutoStart.IsChecked()
 	config.StartMinimized = me.cbStartMinimized.IsChecked()
+	config.ShowPreviewWindow = me.cbShowPreviewWindow.IsChecked()
+	config.PreviewAlwaysOnTop = me.cbPreviewAlwaysOnTop.IsChecked()
 }
 
 func (me *Gui) startWebServer() {
@@ -309,15 +361,82 @@ func (me *Gui) startWebServer() {
 	me.infoText.SetText(fmt.Sprintf("Server listening on:\r\n  %s", strings.Join(addresses, "\r\n  ")))
 	me.btnStart.SetText("&Stop")
 	me.btnStart.Hwnd().EnableWindow(true)
+	me.cbShowPreviewWindow.Hwnd().EnableWindow(true)
+
+	if me.cbShowPreviewWindow.IsChecked() {
+		me.createWebView()
+	}
 }
 
 func (me *Gui) stopWebServer() {
 	me.btnStart.Hwnd().EnableWindow(false)
+
 	if me.srv != nil {
 		me.srv.Stop()
 		me.srv = nil
 	}
+	me.destroyWebView()
+
 	me.infoText.SetText("")
 	me.btnStart.SetText("&Start")
 	me.btnStart.Hwnd().EnableWindow(true)
+}
+
+func (me *Gui) createWebView() {
+	if me.webViewWin != nil {
+		return
+	}
+	var webViewOptions = webview2.WebViewOptions{
+		Debug:     true,
+		AutoFocus: true,
+		WindowOptions: webview2.WindowOptions{
+			Title:           "SMTC Now Playing",
+			Width:           600,
+			Height:          400,
+			IconId:          0,
+			Center:          true,
+			Borderless:      true,
+			BackgroundColor: &webview2.Color{R: 0, G: 0, B: 0, A: 0},
+		},
+		OnDestroy: func() {
+			me.webViewWin = nil
+			if me.srv == nil {
+				return
+			}
+			me.cbShowPreviewWindow.SetCheck(false)
+		},
+	}
+
+	me.webViewWin = webview2.NewWithOptions(webViewOptions)
+	if me.webViewWin == nil {
+		log.Fatalln("Failed to load webview.")
+	}
+	me.webViewWin.Bind("root_loaded", func(left int, top int, width int, height int) {
+		me.webViewWin.SetSize(left+width, top+height, webview2.HintFixed)
+	})
+	me.webViewWin.SetSize(600, 400, webview2.HintFixed)
+	me.webViewWin.Navigate("http://127.0.0.1:" + me.portEdit.Text())
+	me.webViewWin.Eval(`document.addEventListener('DOMContentLoaded', function() {
+		const rect = document.getElementById('root').getBoundingClientRect();
+		window.root_loaded(rect.left, rect.top, rect.width, rect.height);
+	});`)
+	me.updateWebViewAlwaysOnTop()
+}
+
+func (me *Gui) destroyWebView() {
+	if me.webViewWin != nil {
+		me.webViewWin.Destroy()
+		me.webViewWin = nil
+	}
+}
+
+func (me *Gui) updateWebViewAlwaysOnTop() {
+	hwnd := win.HWND(me.webViewWin.Window())
+	if me.cbPreviewAlwaysOnTop.IsChecked() {
+		HWND_TOPMOST := -1
+		hwnd.SetWindowPos(win.HWND(HWND_TOPMOST), 0, 0, 0, 0, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
+	} else {
+		HWND_NOTOPMOST := -2
+		hwnd.SetWindowPos(win.HWND(HWND_NOTOPMOST), 0, 0, 0, 0, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
+	}
 }

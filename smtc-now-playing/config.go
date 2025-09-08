@@ -12,20 +12,24 @@ import (
 //  - `config.json` file, located in the %APPDATA%/soarqin/smtc-now-playing/ if exists, otherwise it is created with default values
 
 type Config struct {
-	Port           int    `json:"port"`
-	Theme          string `json:"theme"`
-	AutoStart      bool   `json:"autostart"`
-	StartMinimized bool   `json:"startminimized"`
+	Port               int    `json:"port"`
+	Theme              string `json:"theme"`
+	AutoStart          bool   `json:"autostart"`
+	StartMinimized     bool   `json:"startminimized"`
+	ShowPreviewWindow  bool   `json:"showpreviewwindow"`
+	PreviewAlwaysOnTop bool   `json:"previewalwaysontop"`
 }
 
 var config *Config
 
 func init() {
 	config = &Config{
-		Port:           11451,
-		Theme:          "default",
-		AutoStart:      false,
-		StartMinimized: false,
+		Port:               11451,
+		Theme:              "default",
+		AutoStart:          false,
+		StartMinimized:     false,
+		ShowPreviewWindow:  true,
+		PreviewAlwaysOnTop: true,
 	}
 }
 

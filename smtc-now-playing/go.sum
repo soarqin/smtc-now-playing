@@ -1,4 +1,10 @@
+github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 h1:njuLRcjAuMKr7kI3D85AXWkw6/+v9PwtV6M6o11sWHQ=
+github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1/go.mod h1:alcuEEnZsY1WQsagKhZDsoPCRoOijYqhZvPwLG0kzVs=
 github.com/rodrigocfd/windigo v0.2.0 h1:BsV8bf9/ave8qhi3qklxSb3Mdw7XfUFTPZI/j8EdLJ4=
 github.com/rodrigocfd/windigo v0.2.0/go.mod h1:3zHhLYU08CkrMx5cdPlmC1HObT8fSldWtfS8cnSRzYo=
+github.com/soarqin/go-webview2 v0.0.0-20250907151729-c019c0d5cb80 h1:Uyc4RkEV0gOYm5gbboao2OQeoIEL/FMx0+jHSWTmj8Q=
+github.com/soarqin/go-webview2 v0.0.0-20250907151729-c019c0d5cb80/go.mod h1:sETcLkHbvHrW/544NP4hWPnltT2oiSuvgglgIiCLwKg=
+golang.org/x/sys v0.0.0-20200810151505-1b9f1253b3ed/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20210218145245-beda7e5e158e/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.33.0 h1:q3i8TbbEz+JRD9ywIRlyRAQbM0qF7hu24q3teo2hbuw=
 golang.org/x/sys v0.33.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=

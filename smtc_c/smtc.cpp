@@ -13,11 +13,19 @@ using namespace Windows::Foundation;
 using namespace Windows::Storage::Streams;
 
 Smtc::Smtc() {
-    init_apartment();
+    try {
+        init_apartment();
+    } catch (...) {
+        // skip exception
+    }
 }
 
 Smtc::~Smtc() {
-    uninit_apartment();
+    try {
+        uninit_apartment();
+    } catch (...) {
+        // skip exception
+    }
 }
 
 static std::wstring escape(const std::wstring& str) {
