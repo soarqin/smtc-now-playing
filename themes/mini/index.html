@@ -4,10 +4,123 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Now Playing</title>
-    <link rel="stylesheet" href="styles.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: transparent;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #root {
+            app-region: drag;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 250px;
+            padding: 0px;
+            /* remove following lines to make container align to center */
+            align-self: flex-start;
+            left: 0;
+            top: 0;
+            position: absolute;
+        }
+
+        .now-playing {
+            background-color: #2a2a2acc;
+            border-radius: 5px;
+            padding: 10px;
+            box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1);
+            overflow: visible;
+        }
+
+        .track-container {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+            flex-direction: column;
+            overflow: visible;
+        }
+
+        .text-wrapper {
+            overflow: hidden;
+        }
+
+        .track-container h2, .track-container p {
+            white-space: nowrap;
+            position: relative;
+            width: 100%;
+            margin: 0;
+        }
+
+        .track-container h2 {
+            font-size: 1.2rem;
+            color: #ffffff;
+        }
+
+        .track-container p {
+            font-size: 1rem;
+            color: #c3c3c3;
+        }
+
+        .track-container h2.center, .track-container p.center {
+            text-align: center;
+        }
+
+        .track-container h2.scroll, .track-container p.scroll {
+            animation: scroll-text 20s linear infinite;
+        }
+
+        @keyframes scroll-text {
+            0% {
+                transform: translateX(0);
+            }
+            5% {
+                transform: translateX(0);
+            }
+            45% {
+                transform: translateX(var(--scroll-distance, -100%));
+            }
+            55% {
+                transform: translateX(var(--scroll-distance, -100%));
+            }
+            95% {
+                transform: translateX(0);
+            }
+            100% {
+                transform: translateX(0);
+            }
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #404040;
+            border-radius: 2px;
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+
+        .progress {
+            width: 0%;
+            height: 100%;
+            background-color: #1db954;
+            transition: width 0.1s linear;
+        }
+    </style>
 </head>
 <body>
-    <div class="container" id="root">
+    <div class="player-card" id="root">
         <div class="now-playing">
             <div class="track-container">
                 <div class="text-wrapper">
@@ -22,6 +135,94 @@
             </div>
         </div>
     </div>
+    <script>
+        // Format time in MM:SS format
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60);
+            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+        // Check if text overflows and add scroll animation if needed
+        function checkTextOverflow(element) {
+            if (element.scrollWidth > element.clientWidth) {
+                const scrollDistance = element.scrollWidth - element.clientWidth;
+                element.style.setProperty('--scroll-distance', `-${scrollDistance}px`);
+                element.classList.remove('center');
+                element.classList.add('scroll');
+            } else {
+                element.classList.remove('scroll');
+                element.classList.add('center');
+                element.style.removeProperty('--scroll-distance');
+            }
+        }
+        window.onLoaded = function() {
+            const trackNameEl = document.getElementById('trackName');
+            const artistNameEl = document.getElementById('artistName');
+            const progressBar = document.getElementById('progress');
+            const currentTimeText = document.getElementById('currentTime');
+            const totalTimeText = document.getElementById('totalTime');
+            const statusText = document.getElementById('status');
+            let lastStatus = 0
+            window.setTrackInfo = function updateTrackInfo(title, artist) {
+                trackNameEl.textContent = title || '未播放';
+                artistNameEl.textContent = artist || '未知艺术家';
+                // Check for overflow after updating text
+                setTimeout(() => {
+                    checkTextOverflow(trackNameEl);
+                    checkTextOverflow(artistNameEl);
+                }, 0);
+            }
+            window.setAlbumArt = function(url) {
+            }
+            // Update progress bar and time
+            window.setProgress = function(currentTime, duration) {
+                if (duration > 0) {
+                    const progress = (currentTime / duration) * 100;
+                    if (progressBar) {
+                        progressBar.style.width = `${progress}%`;
+                    }
+                    if (currentTimeText) {
+                        currentTimeText.textContent = formatTime(currentTime);
+                    }
+                    if (totalTimeText) {
+                        totalTimeText.textContent = formatTime(duration);
+                    }
+                } else {
+                    if (progressBar) {
+                        progressBar.style.width = '0';
+                    }
+                    if (currentTimeText) {
+                        currentTimeText.textContent = '';
+                    }
+                    if (totalTimeText) {
+                        totalTimeText.textContent = '';
+                    }
+                }
+            }
+            window.setPlayingStatus = function(status) {
+                if (lastStatus === status)
+                    return;
+                lastStatus = status;
+                switch (status) {
+                    case 0:
+                    case 1:
+                    case 2:
+                    case 3:
+                        statusText.textContent = '已停止';
+                        break;
+                    case 4:
+                        statusText.textContent = '正在播放';
+                        break;
+                    case 5:
+                        statusText.textContent = '已暂停';
+                        break;
+                    default:
+                        statusText.textContent = '未知状态';
+                        break;
+                }
+            }
+        }
+    </script>
     <script src="/script/functions.js"></script>
 </body>
 </html>

@@ -426,7 +426,6 @@ func (me *Gui) createWebView() {
 func (me *Gui) destroyWebView() {
 	if me.webViewWin != nil {
 		me.webViewWin.Destroy()
-		me.webViewWin = nil
 	}
 }
 

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <title>正在播放 - 音乐卡片 (横版)</title>
+    <style>
+        :root {
+            --primary-color: #6c5ce7;
+            --card-bg: linear-gradient(135deg, #667eeacc 0%, #764ba2cc 100%);
+            --card-border: rgba(255, 255, 255, 0.2);
+            --text-main: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --text-accent: #81ecec;
+            --text-paused: #fab1a0;
+            --shadow-light: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            --radius-main: 24px;
+            --radius-sm: 12px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: transparent;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--text-main);
+            overflow: hidden;
+        }
+        #root {
+            app-region: drag;
+        }
+        .player-card {
+            width: 440px;
+            height: 150px;
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-main);
+            padding: 20px;
+            box-shadow: var(--shadow-light);
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 20px;
+            transition: transform 0.3s;
+        }
+        .album-art-wrapper {
+            width: 110px;
+            height: 110px;
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            position: relative;
+            flex-shrink: 0;
+        }
+        .album-art {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+            filter: brightness(0.9);
+        }
+        .playing .album-art { animation: pulse 4s infinite ease-in-out; }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .content-area {
+            flex: 1; /* 占据剩余空间 */
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow: hidden; /* 切除溢出 */
+        }
+        .song-info { 
+            margin-bottom: 5px;
+        }
+        .song-title { 
+            font-size: 1.25rem; /* 字体稍微调小 */
+            font-weight: 700; 
+            margin-bottom: 4px; 
+            line-height: 1.2;
+        }
+        .artist-name { 
+            font-size: 0.9rem; 
+            color: var(--text-secondary); 
+            font-weight: 400; 
+        }
+        .audio-visualizer {
+            width: 100%;
+            height: 30px; /* 高度变小 */
+            display: flex;
+            justify-content: center; /* 居中显示 */
+            align-items: flex-end;
+            gap: 3px; /* 间距变小 */
+            margin: 5px 0;
+        }
+        .bar {
+            width: 3px; /* 条形变细 */
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 3px;
+            box-shadow: 0 0 8px rgba(255,255,255,0.5);
+            height: 4px;
+            transition: height 0.3s ease;
+        }
+        .playing .bar {
+            animation: equalizer var(--duration) ease-in-out infinite;
+            animation-delay: var(--delay);
+        }
+        @keyframes equalizer {
+            0% { height: 10%; }
+            50% { height: var(--max-height); }
+            100% { height: 10%; }
+        }
+        .scrolling-text {
+            display: block; 
+            white-space: nowrap;
+            width: 100%;
+        }
+        .content-area .scrolling-text {
+            text-align: left;
+        }
+        @keyframes scroll-left {
+            0% { transform: translateX(0); }
+            10% { transform: translateX(0); }
+            50% { transform: translateX(var(--scroll-distance)); }
+            60% { transform: translateX(var(--scroll-distance)); }
+            100% { transform: translateX(0); }
+        }
+        .scrolling {
+            animation: scroll-left 8s linear infinite;
+        }
+        .scrolling:hover {
+            animation-play-state: paused;
+        }
+        .progress-area { 
+            width: 100%; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 8px; 
+            margin-top: auto; /* 推到底部 */
+        }
+        .progress-bar-bg {
+            width: 100%; 
+            height: 4px; /* 横版进度条通常更细一点 */
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px; 
+            cursor: pointer; 
+            position: relative; 
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%; 
+            width: 0%; 
+            background: var(--text-main);
+            border-radius: 10px; 
+            position: relative; 
+            transition: width 0.2s linear;
+        }
+        .progress-thumb {
+            position: absolute; 
+            right: -6px; 
+            top: 50%; 
+            transform: translateY(-50%);
+            width: 12px; 
+            height: 12px; 
+            background: #fff; 
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); 
+            opacity: 0; 
+            transition: opacity 0.2s;
+        }
+        .progress-bar-bg:hover .progress-thumb { opacity: 1; }
+        .time-status-row {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr; 
+            align-items: center;
+            width: 100%;
+            font-size: 0.75rem; /* 字体稍微调小 */
+            color: var(--text-secondary);
+            font-feature-settings: "tnum"; 
+            font-variant-numeric: tabular-nums;
+        }
+        .time-left { justify-self: start; }
+        .time-right { justify-self: end; }
+        .status-badge {
+            justify-self: center;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: var(--text-accent);
+            font-weight: 500;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: color 0.3s;
+        }
+        .status-dot {
+            width: 5px;
+            height: 5px;
+            background-color: var(--text-accent);
+            border-radius: 50%;
+            box-shadow: 0 0 6px var(--text-accent);
+            transition: background-color 0.3s, box-shadow 0.3s;
+        }
+        .playing .status-badge { animation: statusPulse 2s infinite ease-in-out; }
+        @keyframes statusPulse {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; text-shadow: 0 0 8px rgba(129, 236, 236, 0.4); }
+        }
+    </style>
+</head>
+<body>
+    <main class="player-card playing" id="root">
+        <!-- 左侧：专辑封面 -->
+        <figure class="album-art-wrapper">
+            <img src="https://picsum.photos/seed/musicvibes/400/400.jpg" alt="Album Cover" class="album-art" id="albumArt">
+        </figure>
+        <!-- 右侧：内容区域 -->
+        <div class="content-area">
+            <div class="song-info">
+                <h1 class="song-title scrolling-text" id="trackName"></h1>
+                <p class="artist-name scrolling-text" id="artistName"></p>
+            </div>
+            <div class="audio-visualizer" id="visualizer">
+                <!-- JS 生成条形 -->
+            </div>
+            <div class="progress-area">
+                <div class="progress-bar-bg" id="progressBarBg">
+                    <div class="progress-bar-fill" id="progress">
+                        <div class="progress-thumb"></div>
+                    </div>
+                </div>
+                <div class="time-status-row">
+                    <span class="time-left" id="currentTime">0:00</span>
+                    <div class="status-badge" id="statusBadge">
+                        <span class="status-dot" id="statusDot"></span>
+                        <span id="status">正在播放</span>
+                    </div>
+                    <span class="time-right" id="totalTime">4:03</span>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script>
+        window.onLoaded = function() {
+            const visualizer = document.getElementById('visualizer');
+            const barCount = 30; // 横版可以放更多条形，增加密度感
+            // --- 初始化波形 ---
+            function reinitVisulizer() {
+                visualizer.replaceChildren();
+                for (let i = 0; i < barCount; i++) {
+                    const bar = document.createElement('div');
+                    bar.classList.add('bar');
+                    const maxHeight = Math.floor(Math.random() * 60) + 40; 
+                    const duration = (Math.random() * 0.7 + 0.5).toFixed(2); 
+                    const delay = (Math.random() * -1).toFixed(2);
+                    bar.style.setProperty('--max-height', `${maxHeight}%`);
+                    bar.style.setProperty('--duration', `${duration}s`);
+                    bar.style.setProperty('--delay', `${delay}s`);
+                    visualizer.appendChild(bar);
+                }
+            }
+            const trackNameEl = document.getElementById('trackName');
+            const artistNameEl = document.getElementById('artistName');
+            const albumArtEl = document.getElementById('albumArt');
+            const albumArtDiv = albumArtEl.parentElement;
+            // --- 全局状态变量 ---
+            let lastStatus = 0;
+            let lastTitle = '';
+            let lastArtist = '';
+            // 格式化时间
+            const formatTime = (seconds) => {
+                const min = Math.floor(seconds / 60);
+                const sec = Math.floor(seconds % 60);
+                return `${min}:${sec < 10 ? '0' : ''}${sec}`;
+            };
+            function checkTextOverflow(element) {
+                // 注意：这里要检查父容器 .content-area 的宽度，而不是 grandparent
+                const clientWidth = element.clientWidth; 
+                const textWidth = element.scrollWidth;
+                if (textWidth > clientWidth) {
+                    element.classList.add('scrolling');
+                    const distance = clientWidth - textWidth;
+                    element.style.setProperty('--scroll-distance', `${distance}px`);
+                } else {
+                    element.classList.remove('scrolling');
+                    element.style.removeProperty('--scroll-distance');
+                }
+            }
+            // 初始检查
+            checkTextOverflow(trackNameEl);
+            checkTextOverflow(artistNameEl);
+            // 窗口大小改变时重新计算
+            window.addEventListener('resize', () => {
+                checkTextOverflow(trackNameEl);
+                checkTextOverflow(artistNameEl);
+            });
+            // ==========================================
+            // --- 外部调用函数
+            // ==========================================
+            window.setAlbumArt = function(url) {
+                if (url) {
+                    url = url.trim()
+                    if (url !== '') {
+                        albumArtEl.src = url;
+                        albumArtDiv.style.display = 'block';
+                        return;
+                    }
+                }
+                albumArtEl.src = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs%3D';
+                albumArtDiv.style.display = 'none';
+            };
+            window.setTrackInfo = function(title, artist) {
+                if (lastTitle === title && lastArtist == artist)
+                    return;
+                lastTitle = title;
+                lastArtist = artist;
+                trackNameEl.textContent = title || '未播放';
+                artistNameEl.textContent = artist || '未知艺术家';
+                setTimeout(() => {
+                    reinitVisulizer();
+                    checkTextOverflow(trackNameEl);
+                    checkTextOverflow(artistNameEl);
+                }, 0);
+            };
+            window.setPlayingStatus = function(status) {
+                const playerCard = document.getElementById('root');
+                const statusText = document.getElementById('status');
+                const statusBadge = document.getElementById('statusBadge');
+                const statusDot = document.getElementById('statusDot');
+                const root = document.documentElement;
+                if (lastStatus === status)
+                    return;
+                switch (status) {
+                    case 0:
+                    case 1:
+                    case 2:
+                    case 3:
+                        statusText.textContent = '已停止';
+                        break;
+                    case 4:
+                        statusText.textContent = '正在播放';
+                        break;
+                    case 5:
+                        statusText.textContent = '已暂停';
+                        break;
+                    default:
+                        statusText.textContent = '未知状态';
+                        break;
+                }
+                lastStatus = status;
+                if (status === 4) {
+                    playerCard.classList.add('playing');
+                    root.style.setProperty('--text-accent', '#81ecec');
+                    statusDot.style.backgroundColor = '#81ecec';
+                    statusDot.style.boxShadow = '0 0 6px #81ecec';
+                } else {
+                    playerCard.classList.remove('playing');
+                    root.style.setProperty('--text-accent', '#fab1a0');
+                    statusDot.style.backgroundColor = '#fab1a0';
+                    statusDot.style.boxShadow = 'none';
+                }
+            };
+            window.setProgress = function(currentSeconds, totalSeconds) {
+                const currentTimeEl = document.getElementById('currentTime');
+                const totalTimeEl = document.getElementById('totalTime');
+                const progressFill = document.getElementById('progress');
+                currentTimeEl.textContent = formatTime(currentSeconds);
+                if (totalSeconds !== undefined) {
+                    totalDuration = totalSeconds;
+                    totalTimeEl.textContent = formatTime(totalDuration);
+                }
+                if (totalDuration > 0) {
+                    const percent = (currentSeconds / totalDuration) * 100;
+                    progressFill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+                }
+            };
+        };
+    </script>
+    <script src="/script/functions.js"></script>
+</body>
+</html>
