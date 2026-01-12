@@ -9,9 +9,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/ui"
 	"github.com/rodrigocfd/windigo/win"
-	"github.com/rodrigocfd/windigo/win/co"
 	"github.com/soarqin/go-webview2"
 )
 
