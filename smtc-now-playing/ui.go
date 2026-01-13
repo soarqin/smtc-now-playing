@@ -52,7 +52,7 @@ func NewGui( /*g ProcessExitGroup*/ ) *Gui {
 		optsMain.
 			Title("SMTC Now Playing").
 			Size(ui.Dpi(370, 260)).
-			ClassIconId(101), // ID of icon resource, see resources folder
+			ClassIconId(0), // ID of icon resource, see resources folder
 	)
 
 	lblPort := ui.NewStatic( // create the child controls
