@@ -14,18 +14,13 @@ using namespace Windows::Storage::Streams;
 
 Smtc::Smtc() {
     try {
-        init_apartment();
+        init_apartment(apartment_type::single_threaded);
     } catch (...) {
         // skip exception
     }
 }
 
 Smtc::~Smtc() {
-    try {
-        uninit_apartment();
-    } catch (...) {
-        // skip exception
-    }
 }
 
 static std::wstring escape(const std::wstring& str) {

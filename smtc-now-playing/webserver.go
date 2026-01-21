@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -62,7 +64,7 @@ func NewWebServer(host string, port string, theme string) *WebServer {
 	}
 
 	mux.HandleFunc("/update_event", srv.handleUpdateEvent)
-	mux.HandleFunc("/albumArt", srv.handleAlbumArt)
+	mux.HandleFunc("/albumArt/", srv.handleAlbumArt)
 	mux.HandleFunc("/script/", srv.handleScript)
 	mux.HandleFunc("/", srv.handleStatic)
 
@@ -216,7 +218,8 @@ func (srv *WebServer) Start() {
 				dirty := srv.smtc.RetrieveDirtyData(&info.Artist, &info.Title, &srv.albumArtContentType, &srv.albumArtData, &progress.Position, &progress.Duration, &progress.Status)
 				if dirty&1 != 0 {
 					if len(srv.albumArtData) > 0 {
-						info.AlbumArt = "/albumArt"
+						checksum := sha256.Sum256(srv.albumArtData)
+						info.AlbumArt = "/albumArt/" + hex.EncodeToString(checksum[:])
 					} else {
 						info.AlbumArt = ""
 					}

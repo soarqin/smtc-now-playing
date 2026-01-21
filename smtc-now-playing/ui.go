@@ -140,6 +140,8 @@ func (me *Gui) events() {
 		me.cbStartMinimized.SetCheck(config.StartMinimized)
 		me.cbShowPreviewWindow.SetCheck(config.ShowPreviewWindow)
 		me.cbPreviewAlwaysOnTop.SetCheck(config.PreviewAlwaysOnTop)
+		me.btnStart.Hwnd().EnableWindow(true)
+
 		// List themes in folder and add them to combobox
 		themes, err := os.ReadDir("themes")
 		if err != nil {
@@ -361,7 +363,6 @@ func (me *Gui) startWebServer() {
 	me.infoText.SetText(fmt.Sprintf("Server listening on:\r\n  %s", strings.Join(addresses, "\r\n  ")))
 	me.btnStart.SetText("&Stop")
 	me.btnStart.Hwnd().EnableWindow(true)
-	me.cbShowPreviewWindow.Hwnd().EnableWindow(true)
 
 	if me.cbShowPreviewWindow.IsChecked() {
 		me.createWebView()
@@ -399,9 +400,12 @@ func (me *Gui) createWebView() {
 			BackgroundColor: &webview2.Color{R: 0, G: 0, B: 0, A: 0},
 		},
 		OnDestroy: func() {
-			me.webViewWin = nil
 			if me.srv == nil {
 				return
+			}
+			if me.webViewWin != nil {
+				me.webViewWin.Destroy()
+				me.webViewWin = nil
 			}
 			me.cbShowPreviewWindow.SetCheck(false)
 		},
@@ -411,21 +415,18 @@ func (me *Gui) createWebView() {
 	if me.webViewWin == nil {
 		log.Fatalln("Failed to load webview.")
 	}
-	me.webViewWin.Bind("root_loaded", func(left int, top int, width int, height int) {
+	me.webViewWin.Bind("rootLoaded", func(left int, top int, width int, height int) {
 		me.webViewWin.SetSize(left+width, top+height, webview2.HintFixed)
 	})
 	me.webViewWin.SetSize(600, 400, webview2.HintFixed)
 	me.webViewWin.Navigate("http://127.0.0.1:" + me.portEdit.Text())
-	me.webViewWin.Eval(`document.addEventListener('DOMContentLoaded', function() {
-		const rect = document.getElementById('root').getBoundingClientRect();
-		window.root_loaded(rect.left, rect.top, rect.width, rect.height);
-	});`)
 	me.updateWebViewAlwaysOnTop()
 }
 
 func (me *Gui) destroyWebView() {
 	if me.webViewWin != nil {
 		me.webViewWin.Destroy()
+		me.webViewWin = nil
 	}
 }
 

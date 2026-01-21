@@ -43,23 +43,25 @@ function addEventSource(eventSourceName, onmessage) {
 document.addEventListener('DOMContentLoaded', function() {
     setElementWidthsFromGETArgs();
     window.onLoaded();
-    setTimeout(() => {
-        const infoChangedEvt = addEventSource("/update_event", function (event) {
-            const data = JSON.parse(event.data)
-            switch (data.type) {
-                case 'info':
-                    window.setTrackInfo(data.data.title, data.data.artist)
-                    window.setAlbumArt(data.data.albumArt)
-                    break
-                case 'progress':
-                    window.setProgress(data.data.position, data.data.duration)
-                    var status = data.data.status;
-                    if (status !== undefined)
-                        window.setPlayingStatus(data.data.status)
-                    break
-                default:
-                    break
-            }
-        })
+    const infoChangedEvt = addEventSource("/update_event", function (event) {
+        const data = JSON.parse(event.data)
+        switch (data.type) {
+            case 'info':
+                window.setTrackInfo(data.data.title, data.data.artist)
+                window.setAlbumArt(data.data.albumArt)
+                break
+            case 'progress':
+                window.setProgress(data.data.position, data.data.duration)
+                var status = data.data.status;
+                if (status !== undefined)
+                    window.setPlayingStatus(data.data.status)
+                break
+            default:
+                break
+        }
+    });
+    setTimeout(function() {
+        const rect = document.getElementById('root').getBoundingClientRect();
+        window.rootLoaded(rect.left, rect.top, rect.width, rect.height);
     }, 100);
 });
