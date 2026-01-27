@@ -69,8 +69,96 @@ document.addEventListener('DOMContentLoaded', function () {
                 break
         }
     });
-    setTimeout(function () {
-        const rect = document.getElementById('root').getBoundingClientRect();
-        window.rootLoaded(rect.left, rect.top, rect.width, rect.height);
-    }, 100);
+    // Fix getBoundingClientRect() to get correct root panel size
+    // Use a more reliable method that waits for all content to be rendered
+    function getRootSize() {
+        const root = document.getElementById('root');
+        if (!root || !window.rootLoaded) {
+            setTimeout(getRootSize, 50);
+            return;
+        }
+        
+        // Force reflow to ensure accurate measurements
+        void root.offsetHeight;
+        
+        // Use multiple methods to get accurate size
+        const rect = root.getBoundingClientRect();
+        const offsetWidth = root.offsetWidth;
+        const offsetHeight = root.offsetHeight;
+        const scrollWidth = root.scrollWidth;
+        const scrollHeight = root.scrollHeight;
+        
+        // Use offsetWidth/offsetHeight as they're more reliable for layout calculations
+        // Fallback to scroll dimensions, then getBoundingClientRect
+        let width = offsetWidth > 0 ? offsetWidth : (scrollWidth > 0 ? scrollWidth : rect.width);
+        let height = offsetHeight > 0 ? offsetHeight : (scrollHeight > 0 ? scrollHeight : rect.height);
+        
+        // Ensure we have valid dimensions
+        if (width > 0 && height > 0) {
+            window.rootLoaded(rect.left, rect.top, width, height);
+        } else {
+            // Retry if dimensions are not ready yet
+            setTimeout(getRootSize, 50);
+        }
+    }
+   
+    // Wait for images to load, then get size
+    function waitForImagesAndGetSize() {
+        const images = document.querySelectorAll('img');
+        let imagesLoaded = 0;
+        const totalImages = images.length;
+        
+        if (totalImages === 0) {
+            // No images, get size after ensuring layout is complete
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    setTimeout(getRootSize, 50);
+                });
+            });
+        } else {
+            // Wait for all images to load
+            let allLoaded = false;
+            const checkComplete = () => {
+                if (allLoaded) return;
+                if (imagesLoaded === totalImages) {
+                    allLoaded = true;
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            setTimeout(getRootSize, 50);
+                        });
+                    });
+                }
+            };
+            
+            images.forEach(img => {
+                if (img.complete) {
+                    imagesLoaded++;
+                    checkComplete();
+                } else {
+                    img.addEventListener('load', () => {
+                        imagesLoaded++;
+                        checkComplete();
+                    }, { once: true });
+                    img.addEventListener('error', () => {
+                        imagesLoaded++;
+                        checkComplete();
+                    }, { once: true });
+                }
+            });
+            
+            // Fallback timeout in case images take too long
+            setTimeout(() => {
+                if (!allLoaded) {
+                    allLoaded = true;
+                    getRootSize();
+                }
+            }, 1000);
+            
+            // If all images are already loaded
+            checkComplete();
+        }
+    }
+    
+    // Start the process
+    waitForImagesAndGetSize();
 });
