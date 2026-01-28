@@ -28,7 +28,7 @@ func init() {
 		Theme:              "default",
 		AutoStart:          false,
 		StartMinimized:     false,
-		ShowPreviewWindow:  true,
+		ShowPreviewWindow:  false,
 		PreviewAlwaysOnTop: true,
 	}
 }
