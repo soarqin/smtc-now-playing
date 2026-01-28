@@ -8,4 +8,10 @@ require (
 	golang.org/x/sys v0.40.0
 )
 
-require github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
+require (
+	github.com/dolthub/maphash v0.1.0 // indirect
+	github.com/ebitengine/purego v0.9.1 // indirect
+	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
+	github.com/klauspost/compress v1.17.9 // indirect
+	github.com/lxzan/gws v1.8.9 // indirect
+)

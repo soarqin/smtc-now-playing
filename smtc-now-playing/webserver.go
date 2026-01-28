@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/lxzan/gws"
 )
 
 type WebServer struct {
@@ -20,15 +22,13 @@ type WebServer struct {
 	currentInfo     string
 	currentProgress string
 
-	errorChan            chan error
-	quitChan             chan struct{}
-	waitGroup            sync.WaitGroup
-	infoUpdate           []chan string
-	progressUpdate       []chan string
-	infoChannelMutex     sync.Mutex
-	progressChannelMutex sync.Mutex
-	albumArtContentType  string
-	albumArtData         []byte
+	errorChan           chan error
+	quitChan            chan struct{}
+	waitGroup           sync.WaitGroup
+	wsConnections       map[*gws.Conn]struct{}
+	wsConnectionsMutex  sync.Mutex
+	albumArtContentType string
+	albumArtData        []byte
 }
 
 type infoDetail struct {
@@ -59,11 +59,10 @@ func NewWebServer(host string, port string, theme string) *WebServer {
 
 		currentTheme: theme,
 
-		infoUpdate:     make([]chan string, 0),
-		progressUpdate: make([]chan string, 0),
+		wsConnections: make(map[*gws.Conn]struct{}),
 	}
 
-	mux.HandleFunc("/update_event", srv.handleUpdateEvent)
+	mux.HandleFunc("/ws", srv.handleWebSocket)
 	mux.HandleFunc("/albumArt/", srv.handleAlbumArt)
 	mux.HandleFunc("/script/", srv.handleScript)
 	mux.HandleFunc("/", srv.handleStatic)
@@ -71,107 +70,83 @@ func NewWebServer(host string, port string, theme string) *WebServer {
 	return srv
 }
 
-func (srv *WebServer) addInfoUpdateChannel() chan string {
-	srv.infoChannelMutex.Lock()
-	defer srv.infoChannelMutex.Unlock()
-	ch := make(chan string, 1)
-	srv.infoUpdate = append(srv.infoUpdate, ch)
-	return ch
+// addWebSocketConnection adds a WebSocket connection to the connection pool
+func (srv *WebServer) addWebSocketConnection(conn *gws.Conn) {
+	srv.wsConnectionsMutex.Lock()
+	defer srv.wsConnectionsMutex.Unlock()
+	srv.wsConnections[conn] = struct{}{}
 }
 
-func (srv *WebServer) removeInfoUpdateChannel(ch chan string) {
-	srv.infoChannelMutex.Lock()
-	defer srv.infoChannelMutex.Unlock()
-	for i, c := range srv.infoUpdate {
-		if c == ch {
-			srv.infoUpdate = append(srv.infoUpdate[:i], srv.infoUpdate[i+1:]...)
-		}
+// removeWebSocketConnection removes a WebSocket connection from the connection pool
+func (srv *WebServer) removeWebSocketConnection(conn *gws.Conn) {
+	srv.wsConnectionsMutex.Lock()
+	defer srv.wsConnectionsMutex.Unlock()
+	delete(srv.wsConnections, conn)
+}
+
+// broadcastMessage sends a message to all connected WebSocket clients
+func (srv *WebServer) broadcastMessage(data []byte) {
+	srv.wsConnectionsMutex.Lock()
+	defer srv.wsConnectionsMutex.Unlock()
+	for conn := range srv.wsConnections {
+		conn.WriteMessage(gws.OpcodeText, data)
 	}
 }
 
-func (srv *WebServer) addProgressUpdateChannel() chan string {
-	srv.progressChannelMutex.Lock()
-	defer srv.progressChannelMutex.Unlock()
-	ch := make(chan string, 1)
-	srv.progressUpdate = append(srv.progressUpdate, ch)
-	return ch
+// wsHandler implements gws.Event interface for WebSocket connections
+type wsHandler struct {
+	srv *WebServer
 }
 
-func (srv *WebServer) removeProgressUpdateChannel(ch chan string) {
-	srv.progressChannelMutex.Lock()
-	defer srv.progressChannelMutex.Unlock()
-	for i, c := range srv.progressUpdate {
-		if c == ch {
-			srv.progressUpdate = append(srv.progressUpdate[:i], srv.progressUpdate[i+1:]...)
-		}
+func (h *wsHandler) OnOpen(socket *gws.Conn) {
+	h.srv.addWebSocketConnection(socket)
+	// Send current state to new connection
+	h.srv.currentMutex.Lock()
+	info := h.srv.currentInfo
+	progress := h.srv.currentProgress
+	h.srv.currentMutex.Unlock()
+	if info != "" {
+		socket.WriteMessage(gws.OpcodeText, []byte(info))
+	}
+	if progress != "" {
+		socket.WriteMessage(gws.OpcodeText, []byte(progress))
 	}
 }
 
-func writeSSEHeader(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+func (h *wsHandler) OnClose(socket *gws.Conn, err error) {
+	h.srv.removeWebSocketConnection(socket)
 }
 
-func writeSSEData(w http.ResponseWriter, rc *http.ResponseController, data string) error {
-	_, err := fmt.Fprintf(w, "data: %v\n\n", data)
-	if err != nil {
-		return err
-	}
-	err = rc.Flush()
-	if err != nil {
-		return err
-	}
-	return nil
+func (h *wsHandler) OnPing(socket *gws.Conn, payload []byte) {
+	socket.WritePong(nil)
 }
 
-func (srv *WebServer) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
-	writeSSEHeader(w)
+func (h *wsHandler) OnPong(socket *gws.Conn, payload []byte) {
+	// Handle pong if needed
+}
 
-	rc := http.NewResponseController(w)
+func (h *wsHandler) OnMessage(socket *gws.Conn, message *gws.Message) {
+	// Handle client messages if needed
+	// Currently, we only send updates from server to client
+	message.Close()
+}
 
-	srv.currentMutex.Lock()
-	info := srv.currentInfo
-	progress := srv.currentProgress
-	srv.currentMutex.Unlock()
-	err := writeSSEData(w, rc, info)
+// handleWebSocket handles WebSocket connections
+func (srv *WebServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	handler := &wsHandler{srv: srv}
+	upgrader := gws.NewUpgrader(handler, &gws.ServerOption{
+		ParallelEnabled: true,
+		ParallelGolimit: 10,
+		Authorize: func(r *http.Request, session gws.SessionStorage) bool {
+			return true // Allow all connections
+		},
+	})
+
+	conn, err := upgrader.Upgrade(w, r)
 	if err != nil {
 		return
 	}
-	err = writeSSEData(w, rc, progress)
-	if err != nil {
-		return
-	}
-
-	ch := srv.addInfoUpdateChannel()
-	defer srv.removeInfoUpdateChannel(ch)
-	ch2 := srv.addProgressUpdateChannel()
-	defer srv.removeProgressUpdateChannel(ch2)
-
-	clientGone := r.Context().Done()
-	for {
-		select {
-		case <-clientGone:
-			return
-		case data, ok := <-ch:
-			if !ok {
-				return
-			}
-			err := writeSSEData(w, rc, data)
-			if err != nil {
-				return
-			}
-		case data, ok := <-ch2:
-			if !ok {
-				return
-			}
-			err := writeSSEData(w, rc, data)
-			if err != nil {
-				return
-			}
-		}
-	}
+	go conn.ReadLoop()
 }
 
 func (srv *WebServer) handleAlbumArt(w http.ResponseWriter, r *http.Request) {
@@ -231,14 +206,12 @@ func (srv *WebServer) Start() {
 						Data: &info,
 					})
 					if err == nil {
-						info := string(j)
+						infoStr := string(j)
 						srv.currentMutex.Lock()
-						if info != srv.currentInfo {
-							srv.currentInfo = info
+						if infoStr != srv.currentInfo {
+							srv.currentInfo = infoStr
 							srv.currentMutex.Unlock()
-							for _, ch := range srv.infoUpdate {
-								ch <- info
-							}
+							srv.broadcastMessage(j)
 						} else {
 							srv.currentMutex.Unlock()
 						}
@@ -253,14 +226,12 @@ func (srv *WebServer) Start() {
 						Data: &progress,
 					})
 					if err == nil {
-						progress := string(j)
+						progressStr := string(j)
 						srv.currentMutex.Lock()
-						if progress != srv.currentProgress {
-							srv.currentProgress = progress
+						if progressStr != srv.currentProgress {
+							srv.currentProgress = progressStr
 							srv.currentMutex.Unlock()
-							for _, ch := range srv.progressUpdate {
-								ch <- progress
-							}
+							srv.broadcastMessage(j)
 						} else {
 							srv.currentMutex.Unlock()
 						}
@@ -274,12 +245,12 @@ func (srv *WebServer) Start() {
 func (srv *WebServer) Stop() {
 	srv.currentInfo = ""
 	srv.currentProgress = ""
-	for _, ch := range srv.infoUpdate {
-		close(ch)
+	// Close all WebSocket connections
+	srv.wsConnectionsMutex.Lock()
+	for conn := range srv.wsConnections {
+		conn.WriteClose(1000, nil)
 	}
-	for _, ch := range srv.progressUpdate {
-		close(ch)
-	}
+	srv.wsConnectionsMutex.Unlock()
 	close(srv.quitChan)
 	srv.httpSrv.Close()
 	srv.waitGroup.Wait()

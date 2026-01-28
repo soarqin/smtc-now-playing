@@ -27,23 +27,39 @@ function setElementWidthsFromGETArgs() {
     }
 }
 
-function addEventSource(eventSourceName, onmessage) {
-    const eventSource = new EventSource(eventSourceName)
-    eventSource.onmessage = onmessage
-    eventSource.onerror = function (event) {
-        console.error("EventSource " + eventSourceName + " failed:", event)
-        eventSource.close()
+function addWebSocket(wsUrl, onmessage) {
+    let ws = new WebSocket(wsUrl)
+    
+    ws.onopen = function() {
+        console.log("WebSocket connected to " + wsUrl)
+    }
+    
+    ws.onmessage = function(event) {
+        onmessage(event)
+    }
+    
+    ws.onerror = function(error) {
+        console.error("WebSocket " + wsUrl + " error:", error)
+    }
+    
+    ws.onclose = function(event) {
+        console.log("WebSocket closed, reconnecting in 1 second...")
         setTimeout(() => {
-            eventSource = addEventSource(eventSourceName, onmessage)
+            addWebSocket(wsUrl, onmessage)
         }, 1000)
     }
-    return eventSource
+    
+    return ws
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     setElementWidthsFromGETArgs();
     window.onLoaded();
-    const infoChangedEvt = addEventSource("/update_event", function (event) {
+    // Determine WebSocket URL based on current protocol
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = protocol + '//' + window.location.host + '/ws'
+    
+    const infoChangedEvt = addWebSocket(wsUrl, function (event) {
         const data = JSON.parse(event.data)
         switch (data.type) {
             case 'info':

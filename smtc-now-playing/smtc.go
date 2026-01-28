@@ -1,52 +1,112 @@
 package main
 
-/*
-#cgo LDFLAGS: -L../build/lib -lsmtc_c
-#include "../smtc_c/smtc_c.h"
-*/
-import "C"
 import (
+	"path/filepath"
+	"runtime"
+	"syscall"
 	"unsafe"
 
+	"github.com/ebitengine/purego"
 	"golang.org/x/sys/windows"
 )
+
+var (
+	libHandle uintptr
+
+	// Function pointers
+	smtcCreate            func() unsafe.Pointer
+	smtcDestroy           func(smtc unsafe.Pointer)
+	smtcInit              func(smtc unsafe.Pointer) int32
+	smtcUpdate            func(smtc unsafe.Pointer)
+	smtcRetrieveDirtyData func(smtc unsafe.Pointer, artist **uint16, title **uint16, thumbnailContentType **uint16, thumbnailData **uint8, thumbnailLength *int32, position *int32, duration *int32, status *int32) int32
+)
+
+// Global variables to hold C pointers
+var (
+	artist_c               *uint16
+	title_c                *uint16
+	thumbnailContentType_c *uint16
+	thumbnailData_c        *uint8
+	thumbnailLength_c      int32
+)
+
+func openLibrary(name string) (uintptr, error) {
+	// Use syscall.LoadLibrary for Windows to avoid external dependencies
+	handle, err := syscall.LoadLibrary(name)
+	return uintptr(handle), err
+}
+
+func init() {
+	// Load DLL
+	if runtime.GOOS == "windows" {
+		var err error
+		libHandle, err = openLibrary("smtc.dll")
+		if err != nil {
+			// If all relative paths fail, try absolute path based on executable location
+			var exePathBuf [260]uint16
+			exePathLen, _ := windows.GetModuleFileName(0, &exePathBuf[0], uint32(len(exePathBuf)))
+			if exePathLen > 0 {
+				exePath := windows.UTF16ToString(exePathBuf[:exePathLen])
+				exeDir := filepath.Dir(exePath)
+				dllPath := filepath.Join(exeDir, "smtc.dll")
+				libHandle, err = openLibrary(dllPath)
+			}
+			if err != nil {
+				panic("Failed to load smtc.dll: " + err.Error())
+			}
+		}
+	} else {
+		panic("Unsupported platform: " + runtime.GOOS)
+	}
+
+	// Register functions
+	purego.RegisterLibFunc(&smtcCreate, libHandle, "smtc_create")
+	purego.RegisterLibFunc(&smtcDestroy, libHandle, "smtc_destroy")
+	purego.RegisterLibFunc(&smtcInit, libHandle, "smtc_init")
+	purego.RegisterLibFunc(&smtcUpdate, libHandle, "smtc_update")
+	purego.RegisterLibFunc(&smtcRetrieveDirtyData, libHandle, "smtc_retrieve_dirty_data")
+}
 
 type Smtc struct {
 	smtc unsafe.Pointer
 }
 
 func SmtcCreate() *Smtc {
-	return &Smtc{smtc: C.smtc_create()}
+	return &Smtc{smtc: smtcCreate()}
 }
 
 func (s *Smtc) Destroy() {
-	C.smtc_destroy(s.smtc)
+	smtcDestroy(s.smtc)
 }
 
 func (s *Smtc) Init() int {
-	return int(C.smtc_init(s.smtc))
+	return int(smtcInit(s.smtc))
 }
 
 func (s *Smtc) Update() {
-	C.smtc_update(s.smtc)
+	smtcUpdate(s.smtc)
 }
 
-var artist_c *C.wchar_t
-var title_c *C.wchar_t
-var thumbnailContentType_c *C.wchar_t
-var thumbnailData_c *C.uint8_t
-var thumbnailLength_c C.int
-
 func (s *Smtc) RetrieveDirtyData(artist *string, title *string, thumbnailContentType *string, thumbnailData *[]byte, position *int, duration *int, status *int) int {
-	var position_c C.int
-	var duration_c C.int
-	var status_c C.int
-	result := int(C.smtc_retrieve_dirty_data(s.smtc, &artist_c, &title_c, &thumbnailContentType_c, &thumbnailData_c, &thumbnailLength_c, &position_c, &duration_c, &status_c))
+	var position_c int32
+	var duration_c int32
+	var status_c int32
+
+	result := int(smtcRetrieveDirtyData(s.smtc, &artist_c, &title_c, &thumbnailContentType_c, &thumbnailData_c, &thumbnailLength_c, &position_c, &duration_c, &status_c))
+
 	if result&1 != 0 {
-		*artist = windows.UTF16PtrToString((*uint16)(artist_c))
-		*title = windows.UTF16PtrToString((*uint16)(title_c))
-		*thumbnailContentType = windows.UTF16PtrToString((*uint16)(thumbnailContentType_c))
-		*thumbnailData = unsafe.Slice((*byte)(unsafe.Pointer(thumbnailData_c)), thumbnailLength_c)
+		if artist_c != nil {
+			*artist = windows.UTF16PtrToString(artist_c)
+		}
+		if title_c != nil {
+			*title = windows.UTF16PtrToString(title_c)
+		}
+		if thumbnailContentType_c != nil {
+			*thumbnailContentType = windows.UTF16PtrToString(thumbnailContentType_c)
+		}
+		if thumbnailData_c != nil && thumbnailLength_c > 0 {
+			*thumbnailData = unsafe.Slice(thumbnailData_c, thumbnailLength_c)
+		}
 	}
 	if result&2 != 0 {
 		*position = int(position_c)
