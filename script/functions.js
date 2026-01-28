@@ -3,7 +3,6 @@ function setElementWidthsFromGETArgs() {
     const urlParams = new URLSearchParams(window.location.search);
     const maxWidth = urlParams.get('maxWidth');
     const artWidth = urlParams.get('artWidth');
-
     if (maxWidth) {
         // Convert to number and validate
         const width = parseInt(maxWidth);
@@ -29,36 +28,30 @@ function setElementWidthsFromGETArgs() {
 
 function addWebSocket(wsUrl, onmessage) {
     let ws = new WebSocket(wsUrl)
-    
-    ws.onopen = function() {
+    ws.onopen = function () {
         console.log("WebSocket connected to " + wsUrl)
     }
-    
-    ws.onmessage = function(event) {
+    ws.onmessage = function (event) {
         onmessage(event)
     }
-    
-    ws.onerror = function(error) {
+    ws.onerror = function (error) {
         console.error("WebSocket " + wsUrl + " error:", error)
     }
-    
-    ws.onclose = function(event) {
+    ws.onclose = function (event) {
         console.log("WebSocket closed, reconnecting in 1 second...")
         setTimeout(() => {
             addWebSocket(wsUrl, onmessage)
         }, 1000)
     }
-    
     return ws
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     setElementWidthsFromGETArgs();
     window.onLoaded();
     // Determine WebSocket URL based on current protocol
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = protocol + '//' + window.location.host + '/ws'
-    
     const infoChangedEvt = addWebSocket(wsUrl, function (event) {
         const data = JSON.parse(event.data)
         switch (data.type) {
@@ -76,7 +69,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 break
         }
     });
-    setTimeout(function() {
+    setTimeout(function () {
         const rect = document.getElementById('root').getBoundingClientRect();
         window.rootLoaded(rect.left, rect.top, rect.width, rect.height);
     }, 100);
