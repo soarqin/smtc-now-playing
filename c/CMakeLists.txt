@@ -14,6 +14,18 @@ add_global_options(C_STANDARD 17 CXX_STANDARD 20)
 
 include(ProjectMacros)
 
-project(SmtcNowPlaying)
+project(c)
 
-add_subdirectory(smtc_c)
+add_project(smtc_c
+    SHARED smtc.cpp smtc.h smtc_c.cpp smtc_c.h smtc_c.def
+    LANGUAGES CXX NO_PREFIX
+    OUTPUT_NAME smtc)
+
+target_compile_definitions(smtc_c PRIVATE SMTC_EXPORTS)
+target_link_libraries(smtc_c PRIVATE windowsapp)
+set_target_properties(smtc_c PROPERTIES
+    ARCHIVE_OUTPUT_NAME smtc_c
+)
+if(WIN32 AND NOT MSVC)
+    target_link_options(smtc_c PRIVATE -municode)
+endif()
