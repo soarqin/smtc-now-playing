@@ -253,6 +253,8 @@ func (me *Gui) events() {
 	me.themeCombo.On().CbnSelChange(func() {
 		if me.srv != nil {
 			me.srv.SetTheme(me.themeCombo.Text())
+			config.Theme = me.themeCombo.Text()
+			SaveConfig()
 		}
 	})
 
