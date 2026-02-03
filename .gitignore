@@ -36,3 +36,8 @@
 
 # Dist folders
 /dist/
+
+# Claude Code directories
+.claude/
+.claude-plugins/
+.claude-sessions/

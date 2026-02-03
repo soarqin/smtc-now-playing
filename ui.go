@@ -40,6 +40,13 @@ var (
 	msgTaskbarCreated co.WM
 )
 
+// Systray menu item IDs
+const (
+	SYSTRAY_MENU_SHOW_HIDE  = 1001 // Show/Hide Window
+	SYSTRAY_MENU_START_STOP = 1002 // Start/Stop Server
+	SYSTRAY_MENU_EXIT       = 1003 // Exit
+)
+
 // Creates a new instance of our main window.
 func NewGui( /*g ProcessExitGroup*/ ) *Gui {
 	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--enable-features=msWebView2EnableDraggableRegions")
@@ -207,30 +214,107 @@ func (me *Gui) events() {
 			if err != nil {
 				break
 			}
-			utf16Ptr, err := syscall.UTF16PtrFromString("E&xit")
+
+			// Determine current states
+			style, _ := me.wnd.Hwnd().GetWindowLongPtr(co.GWLP_STYLE)
+			isWindowVisible := style&uintptr(co.WS_VISIBLE) != 0
+			isServerRunning := me.srv != nil
+
+			// Menu item: Show/Hide Window
+			showHideLabel := "Hide &Window"
+			if !isWindowVisible {
+				showHideLabel = "Show &Window"
+			}
+			utf16Ptr, err := syscall.UTF16PtrFromString(showHideLabel)
 			if err != nil {
+				popup.DestroyMenu()
 				break
 			}
 			mii := &win.MENUITEMINFO{
 				FMask:      co.MIIM_STRING | co.MIIM_ID,
 				FType:      co.MFT_STRING,
-				WId:        1,
+				WId:        SYSTRAY_MENU_SHOW_HIDE,
 				DwTypeData: utf16Ptr,
 			}
 			mii.SetCbSize()
 			popup.InsertMenuItemByPos(0, mii)
+
+			// Menu item: Start/Stop Server
+			startStopLabel := "Stop &Server"
+			if !isServerRunning {
+				startStopLabel = "Start &Server"
+			}
+			utf16Ptr, err = syscall.UTF16PtrFromString(startStopLabel)
+			if err != nil {
+				popup.DestroyMenu()
+				break
+			}
+			mii = &win.MENUITEMINFO{
+				FMask:      co.MIIM_STRING | co.MIIM_ID,
+				FType:      co.MFT_STRING,
+				WId:        SYSTRAY_MENU_START_STOP,
+				DwTypeData: utf16Ptr,
+			}
+			mii.SetCbSize()
+			popup.InsertMenuItemByPos(1, mii)
+
+			// Separator
+			mii = &win.MENUITEMINFO{
+				FMask: co.MIIM_FTYPE,
+				FType: co.MFT_SEPARATOR,
+			}
+			mii.SetCbSize()
+			popup.InsertMenuItemByPos(2, mii)
+
+			// Menu item: Exit
+			utf16Ptr, err = syscall.UTF16PtrFromString("E&xit")
+			if err != nil {
+				popup.DestroyMenu()
+				break
+			}
+			mii = &win.MENUITEMINFO{
+				FMask:      co.MIIM_STRING | co.MIIM_ID,
+				FType:      co.MFT_STRING,
+				WId:        SYSTRAY_MENU_EXIT,
+				DwTypeData: utf16Ptr,
+			}
+			mii.SetCbSize()
+			popup.InsertMenuItemByPos(3, mii)
+
+			// Display and handle menu
 			pos, err := win.GetCursorPos()
 			if err != nil {
+				popup.DestroyMenu()
 				break
 			}
+
 			res, err := popup.TrackPopupMenu(co.TPM_RETURNCMD|co.TPM_NONOTIFY, int(pos.X), int(pos.Y), me.wnd.Hwnd())
 			if err != nil {
+				popup.DestroyMenu()
 				break
 			}
+
+			// Handle menu selection
 			switch res {
-			case 1:
+			case SYSTRAY_MENU_SHOW_HIDE:
+				if isWindowVisible {
+					me.wnd.Hwnd().ShowWindow(co.SW_HIDE)
+				} else {
+					me.wnd.Hwnd().ShowWindow(co.SW_SHOWNORMAL)
+					me.wnd.Hwnd().SetForegroundWindow()
+				}
+			case SYSTRAY_MENU_START_STOP:
+				if isServerRunning {
+					me.stopWebServer()
+				} else {
+					me.syncConfig()
+					SaveConfig()
+					me.startWebServer()
+				}
+			case SYSTRAY_MENU_EXIT:
 				me.wnd.Hwnd().DestroyWindow()
 			}
+
 			popup.DestroyMenu()
 		}
 		return 0
