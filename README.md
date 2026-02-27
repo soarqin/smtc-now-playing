@@ -11,54 +11,21 @@ Display "Now Playing" information from Windows System Media Transport Controls (
 - 💻 System tray integration
 - 🔔 Windows notifications
 
-## Requirements
+## Quick Start
 
-- Windows 10/11
-- Visual Studio 2022/2026 with C++ workload (for building)
-- Go 1.21+ (for building)
-- WebView2 runtime (usually pre-installed on Windows 10/11)
+### Download
 
-## Installation
+Get the latest release from [Releases](https://github.com/soarqin/smtc-now-playing/releases).
 
-### Pre-built Binary
+### Run
 
-Download the latest release from the [Releases](https://github.com/soarqin/smtc-now-playing/releases) page.
-
-### Build from Source
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/soarqin/smtc-now-playing.git
-   cd smtc-now-playing
-   ```
-
-2. Run the build script:
-   ```batch
-   build.bat
-   ```
-
-   Or build manually:
-   ```batch
-   # Build C++ DLL
-   cmake -B build -Hc -G "Visual Studio 18 2026"
-   cmake --build build --config MinSizeRel --target smtc_c
-
-   # Build Go executable
-   go build -ldflags="-s -w -H windowsgui" -o dist/SmtcNowPlaying.exe
-   ```
-
-## Usage
-
-1. Run `SmtcNowPlaying.exe`
-2. The app will start a local web server (default port: 8080)
+1. Extract the downloaded archive
+2. Run `SmtcNowPlaying.exe`
 3. Open your browser to `http://localhost:8080`
-4. The page will automatically display track information from any media player using Windows SMTC
+
+The page will automatically display track information from any media player using Windows SMTC.
 
 ## Configuration
-
-The application supports two configuration modes:
-
-### Portable Mode
 
 Create `portable_config.json` in the same directory as the executable:
 
@@ -71,10 +38,6 @@ Create `portable_config.json` in the same directory as the executable:
   "minimize_to_tray": true
 }
 ```
-
-### Installed Mode
-
-Configuration is stored in `%APPDATA%/soarqin/smtc-now-playing/config.json`
 
 ### Configuration Options
 
@@ -90,7 +53,7 @@ Configuration is stored in `%APPDATA%/soarqin/smtc-now-playing/config.json`
 
 Connect to `ws://localhost:<port>/ws` to receive real-time updates.
 
-### Message Types
+### Message Format
 
 **info** - Track metadata:
 ```json
@@ -123,63 +86,19 @@ Connect to `ws://localhost:<port>/ws` to receive real-time updates.
 - `paused` - Media is paused
 - `stopped` - Media is stopped
 
+## Building from Source
+
+See [Build Instructions](docs/build.md).
+
 ## Development
 
-### Project Structure
+See [Development Guidelines](docs/development.md).
 
-```
-smtc-now-playing/
-├── c/                  # C++ DLL source
-│   └── smtc_c.cpp
-├── internal/           # Go packages
-│   ├── config/         # Configuration handling
-│   ├── gui/            # Windows GUI and system tray
-│   ├── server/         # HTTP/WebSocket server
-│   ├── smtc/           # SMTC DLL interface
-│   └── webview/        # WebView2 preview window
-├── web/                # Web frontend
-│   ├── index.html
-│   ├── style.css
-│   └── script.js
-├── build.bat           # Build script
-└── main.go             # Application entry point
-```
+## Requirements
 
-### Test Mode
-
-Build a console test application:
-
-```batch
-go build -tags smtc_test -o test.exe
-.\test.exe
-```
-
-This will poll SMTC and print track information to the console.
-
-## Architecture
-
-```
-Windows SMTC → smtc.dll → internal/smtc → internal/server → WebSocket → Web Browser
-                              ↓
-                        internal/gui → WebView2 (optional preview)
-```
-
-The C++ DLL uses a "dirty flag" pattern to efficiently communicate changes:
-- Bit 0: Info changed (artist, title, thumbnail)
-- Bit 1: Progress changed (position, duration, status)
-
-## Technologies
-
-- **Backend**: Go with purego FFI
-- **SMTC Access**: C++/WinRT
-- **GUI**: Win32 API via windigo
-- **WebSocket**: gws library
-- **Frontend**: HTML/CSS/JavaScript
+- Windows 10/11
+- WebView2 runtime (usually pre-installed)
 
 ## License
 
 MIT License
-
-## Author
-
-soarqin

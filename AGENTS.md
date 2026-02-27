@@ -2,6 +2,8 @@
 
 Guidelines for agentic coding agents working in this repository.
 
+For detailed development guidelines, see [docs/development.md](docs/development.md).
+
 ## Project Overview
 
 **smtc-now-playing** is a Windows desktop application that displays "Now Playing" information from Windows System Media Transport Controls (SMTC) as a web page. It uses a C++ DLL for WinRT integration and a Go application for the HTTP/WebSocket server and native GUI.
@@ -12,33 +14,7 @@ Guidelines for agentic coding agents working in this repository.
 
 **All code comments and documentation MUST be written in English.**
 
-This is a strict project requirement to ensure:
-- Code maintainability across international teams
-- Consistency throughout the codebase
-- Better accessibility for AI agents and developers
-
-#### Naming Conventions
-- **Packages**: Single word, lowercase
-- **Types**: PascalCase (e.g., `WebServer`, `infoDetail`)
-- **Functions/Methods**: PascalCase for exported, camelCase for unexported
-- **Receiver names**: Short abbreviations (e.g., `me` for Gui, `srv` for WebServer, `ni` for NotifyIcon)
-
-#### Imports
-Group imports by category with blank lines between:
-1. Standard library
-2. External packages
-3. Internal packages
-
-```go
-import (
-    "fmt"
-    "sync"
-
-    "github.com/lxzan/gws"
-
-    "smtc-now-playing/internal/config"
-)
-```
+See [docs/development.md](docs/development.md) for full coding standards.
 
 ## Build Commands
 
@@ -79,106 +55,14 @@ No unit tests currently exist in this codebase. Testing is done via the test mod
 
 ## Code Style Guidelines
 
-### Go Code Style
-
-#### Naming Conventions
-- **Packages**: Single word, lowercase (e.g., `config`, `smtc`, `server`)
-- **Types**: PascalCase (e.g., `WebServer`, `infoDetail`)
-- **Functions/Methods**: PascalCase for exported, camelCase for unexported
-- **Interfaces**: PascalCase with `-er` suffix when appropriate
-- **Constants**: PascalCase or UPPER_CASE for constant groups
-- **Receiver names**: Short abbreviations (e.g., `me` for Gui, `srv` for WebServer, `ni` for NotifyIcon)
-
-#### Error Handling
-- Return errors as the last return value
-- Use `if err != nil` pattern
-- For critical errors, use `panic` in init functions or `log.Fatalln`
-- For GUI errors, show message box: `wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)`
-
-```go
-func loadConfigFromFile(path string, cfg *Config) error {
-    file, err := os.Open(path)
-    if err != nil {
-        return err
-    }
-    defer file.Close()
-    // ...
-}
-```
-
-#### Struct Definitions
-- Group related fields together
-- Align field types in columns when multiple fields
-- Use struct tags for JSON serialization
-
-```go
-type Config struct {
-    Port               int    `json:"port"`
-    Theme              string `json:"theme"`
-    AutoStart          bool   `json:"autostart"`
-}
-```
-
-#### Comments
-- Minimal comments; prefer self-documenting code
-- Use `//` for single-line comments
-- Comment exported types and functions only when necessary
-
-#### Build Tags
-- Main GUI application: `//go:build !smtc_test`
-- Test console application: `//go:build smtc_test`
-
-#### Concurrency
-- Use `sync.Mutex` with `defer mutex.Unlock()` pattern
-- Use `sync.WaitGroup` for goroutine coordination
-
-```go
-srv.wsConnectionsMutex.Lock()
-defer srv.wsConnectionsMutex.Unlock()
-for conn := range srv.wsConnections {
-    conn.WriteMessage(gws.OpcodeText, data)
-}
-```
-
-### C++ Code Style
-
-Based on `.editorconfig`:
-
-- **Indentation**: 4 spaces (no tabs)
-- **Braces**: K&R style (opening brace on same line)
-- **Pointer alignment**: Left-aligned (`int* ptr`, `const wchar_t** artist`)
-- **Spaces**: 
-  - Space after keywords in control flow
-  - Space before block open brace
-  - Space around binary operators
-  - No space before comma, space after comma
-
-```cpp
-class Smtc {
-public:
-    Smtc();
-    ~Smtc();
-    int init();
-    void update();
-private:
-    std::wstring currentArtist_;
-    int currentPosition_ = 0;
-};
-```
-
-#### Naming Conventions
-- **Classes**: PascalCase (e.g., `Smtc`)
-- **Functions/Methods**: camelCase (e.g., `retrieveDirtyData`)
-- **Member variables**: camelCase with trailing underscore (e.g., `currentArtist_`)
-- **Private methods**: camelCase
-
-#### C++/WinRT Specifics
-- Use `winrt` namespace for WinRT types
-- Use `nullptr` for null pointers
-- Use `std::wstring` for UTF-16 strings
-- Use `std::atomic` for thread-safe flags
+See [docs/development.md](docs/development.md) for detailed code style guidelines including:
+- Go naming conventions and error handling
+- C++ formatting and C++/WinRT specifics
+- Struct definitions and concurrency patterns
 
 ## Architecture Notes
+
+See [docs/development.md](docs/development.md) for detailed architecture documentation.
 
 ### Data Flow
 ```
