@@ -187,6 +187,22 @@ Windows SMTC → smtc.dll → internal/smtc → internal/server → WebSocket �
                         internal/gui → WebView2 (optional preview)
 ```
 
+### Project Structure
+
+```
+smtc-now-playing/
+├── c/                  # C++ DLL source
+├── internal/           # Go packages
+│   ├── config/         # Configuration handling
+│   ├── gui/            # Windows GUI and system tray
+│   ├── server/         # HTTP/WebSocket server
+│   ├── smtc/           # SMTC DLL interface
+│   └── webview/        # WebView2 preview window
+├── themes/             # Web themes
+├── build.bat           # Build script
+└── main.go             # Application entry point
+```
+
 ### Package Dependencies
 
 ```
