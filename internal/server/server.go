@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"crypto/sha256"
@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/lxzan/gws"
+	"smtc-now-playing/internal/smtc"
 )
 
 type WebServer struct {
 	httpSrv *http.Server
-	smtc    *Smtc
+	smtc    *smtc.Smtc
 
 	currentTheme string
 
@@ -43,8 +44,8 @@ type progressDetail struct {
 	Status   int `json:"status"`
 }
 
-func NewWebServer(host string, port string, theme string) *WebServer {
-	smtc := SmtcCreate()
+func New(host string, port string, theme string) *WebServer {
+	smtc := smtc.New()
 	if smtc.Init() != 0 {
 		return nil
 	}
@@ -70,21 +71,18 @@ func NewWebServer(host string, port string, theme string) *WebServer {
 	return srv
 }
 
-// addWebSocketConnection adds a WebSocket connection to the connection pool
 func (srv *WebServer) addWebSocketConnection(conn *gws.Conn) {
 	srv.wsConnectionsMutex.Lock()
 	defer srv.wsConnectionsMutex.Unlock()
 	srv.wsConnections[conn] = struct{}{}
 }
 
-// removeWebSocketConnection removes a WebSocket connection from the connection pool
 func (srv *WebServer) removeWebSocketConnection(conn *gws.Conn) {
 	srv.wsConnectionsMutex.Lock()
 	defer srv.wsConnectionsMutex.Unlock()
 	delete(srv.wsConnections, conn)
 }
 
-// broadcastMessage sends a message to all connected WebSocket clients
 func (srv *WebServer) broadcastMessage(data []byte) {
 	srv.wsConnectionsMutex.Lock()
 	defer srv.wsConnectionsMutex.Unlock()
@@ -93,14 +91,12 @@ func (srv *WebServer) broadcastMessage(data []byte) {
 	}
 }
 
-// wsHandler implements gws.Event interface for WebSocket connections
 type wsHandler struct {
 	srv *WebServer
 }
 
 func (h *wsHandler) OnOpen(socket *gws.Conn) {
 	h.srv.addWebSocketConnection(socket)
-	// Send current state to new connection
 	h.srv.currentMutex.Lock()
 	info := h.srv.currentInfo
 	progress := h.srv.currentProgress
@@ -122,23 +118,19 @@ func (h *wsHandler) OnPing(socket *gws.Conn, payload []byte) {
 }
 
 func (h *wsHandler) OnPong(socket *gws.Conn, payload []byte) {
-	// Handle pong if needed
 }
 
 func (h *wsHandler) OnMessage(socket *gws.Conn, message *gws.Message) {
-	// Handle client messages if needed
-	// Currently, we only send updates from server to client
 	message.Close()
 }
 
-// handleWebSocket handles WebSocket connections
 func (srv *WebServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	handler := &wsHandler{srv: srv}
 	upgrader := gws.NewUpgrader(handler, &gws.ServerOption{
 		ParallelEnabled: true,
 		ParallelGolimit: 10,
 		Authorize: func(r *http.Request, session gws.SessionStorage) bool {
-			return true // Allow all connections
+			return true
 		},
 	})
 
@@ -245,7 +237,6 @@ func (srv *WebServer) Start() {
 func (srv *WebServer) Stop() {
 	srv.currentInfo = ""
 	srv.currentProgress = ""
-	// Close all WebSocket connections
 	srv.wsConnectionsMutex.Lock()
 	for conn := range srv.wsConnections {
 		conn.WriteClose(1000, nil)
@@ -268,38 +259,3 @@ func (srv *WebServer) Error() <-chan error {
 func (srv *WebServer) SetTheme(theme string) {
 	srv.currentTheme = theme
 }
-
-// func unescape(str string) string {
-// 	result := strings.Builder{}
-// 	l := len(str)
-// 	for i := 0; i < l; i++ {
-// 		c := str[i]
-// 		if c == '\\' {
-// 			i++
-// 			if i >= l {
-// 				break
-// 			}
-// 			switch str[i] {
-// 			case 'n':
-// 				result.WriteRune('\n')
-// 			case 'r':
-// 				result.WriteRune('\r')
-// 			case 't':
-// 				result.WriteRune('\t')
-// 			case 'v':
-// 				result.WriteRune('\v')
-// 			case 'b':
-// 				result.WriteRune('\b')
-// 			case 'f':
-// 				result.WriteRune('\f')
-// 			case 'a':
-// 				result.WriteRune('\a')
-// 			default:
-// 				result.WriteByte(c)
-// 			}
-// 		} else {
-// 			result.WriteByte(c)
-// 		}
-// 	}
-// 	return result.String()
-// }

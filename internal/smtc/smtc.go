@@ -1,4 +1,4 @@
-package main
+package smtc
 
 import (
 	"path/filepath"
@@ -13,7 +13,6 @@ import (
 var (
 	libHandle uintptr
 
-	// Function pointers
 	smtcCreate            func() unsafe.Pointer
 	smtcDestroy           func(smtc unsafe.Pointer)
 	smtcInit              func(smtc unsafe.Pointer) int32
@@ -21,7 +20,6 @@ var (
 	smtcRetrieveDirtyData func(smtc unsafe.Pointer, artist **uint16, title **uint16, thumbnailContentType **uint16, thumbnailData **uint8, thumbnailLength *int32, position *int32, duration *int32, status *int32) int32
 )
 
-// Global variables to hold C pointers
 var (
 	artist_c               *uint16
 	title_c                *uint16
@@ -31,18 +29,15 @@ var (
 )
 
 func openLibrary(name string) (uintptr, error) {
-	// Use syscall.LoadLibrary for Windows to avoid external dependencies
 	handle, err := syscall.LoadLibrary(name)
 	return uintptr(handle), err
 }
 
 func init() {
-	// Load DLL
 	if runtime.GOOS == "windows" {
 		var err error
 		libHandle, err = openLibrary("smtc.dll")
 		if err != nil {
-			// If all relative paths fail, try absolute path based on executable location
 			var exePathBuf [260]uint16
 			exePathLen, _ := windows.GetModuleFileName(0, &exePathBuf[0], uint32(len(exePathBuf)))
 			if exePathLen > 0 {
@@ -59,7 +54,6 @@ func init() {
 		panic("Unsupported platform: " + runtime.GOOS)
 	}
 
-	// Register functions
 	purego.RegisterLibFunc(&smtcCreate, libHandle, "smtc_create")
 	purego.RegisterLibFunc(&smtcDestroy, libHandle, "smtc_destroy")
 	purego.RegisterLibFunc(&smtcInit, libHandle, "smtc_init")
@@ -71,7 +65,7 @@ type Smtc struct {
 	smtc unsafe.Pointer
 }
 
-func SmtcCreate() *Smtc {
+func New() *Smtc {
 	return &Smtc{smtc: smtcCreate()}
 }
 

@@ -5,10 +5,12 @@ package main
 import (
 	"fmt"
 	"time"
+
+	"smtc-now-playing/internal/smtc"
 )
 
 func main() {
-	smtc := SmtcCreate()
+	smtc := smtc.New()
 	smtc.Init()
 	artist := ""
 	title := ""

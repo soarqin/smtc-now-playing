@@ -95,7 +95,9 @@ document.addEventListener('DOMContentLoaded', function () {
         
         // Ensure we have valid dimensions
         if (width > 0 && height > 0) {
-            window.rootLoaded(rect.left, rect.top, width, height);
+            // Scale by device pixel ratio for correct DPI handling
+            const dpr = window.devicePixelRatio || 1;
+            window.rootLoaded(rect.left, rect.top, Math.round(width * dpr), Math.round(height * dpr));
         } else {
             // Retry if dimensions are not ready yet
             setTimeout(getRootSize, 50);

@@ -10,6 +10,8 @@ import (
 
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/win"
+	"smtc-now-playing/internal/config"
+	"smtc-now-playing/internal/gui"
 )
 
 var (
@@ -32,14 +34,8 @@ func CreateMutex(name string) (uintptr, error) {
 }
 
 func main() {
-	runtime.LockOSThread() // important: Windows GUI is single-threaded
-	LoadConfig()
-
-	// g, err := NewProcessExitGroup()
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer g.Dispose()
+	runtime.LockOSThread()
+	config.Load()
 
 	mutex, err := CreateMutex("org.soardev.SmtcNowPlaying")
 	nullHwnd := win.HWND(0)
@@ -49,6 +45,6 @@ func main() {
 	}
 	defer syscall.CloseHandle(syscall.Handle(mutex))
 
-	gui := NewGui( /*g*/ )
-	os.Exit(gui.wnd.RunAsMain())
+	gui := gui.New()
+	os.Exit(gui.Run())
 }

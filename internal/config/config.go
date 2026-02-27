@@ -1,15 +1,10 @@
-package main
+package config
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
 )
-
-// Config is the configuration for the application
-// It is loaded from:
-//  - `portable_config.json` file, located in the same directory as the executable if exists, otherwise use next one
-//  - `config.json` file, located in the %APPDATA%/soarqin/smtc-now-playing/ if exists, otherwise it is created with default values
 
 type Config struct {
 	Port               int    `json:"port"`
@@ -33,11 +28,11 @@ func init() {
 	}
 }
 
-func GetConfig() *Config {
+func Get() *Config {
 	return config
 }
 
-func LoadConfig() error {
+func Load() error {
 	dir := os.Args[0]
 	dir = filepath.Dir(dir)
 	portableConfigPath := filepath.Join(dir, "portable_config.json")
@@ -53,7 +48,7 @@ func LoadConfig() error {
 	return nil
 }
 
-func SaveConfig() error {
+func Save() error {
 	dir := os.Args[0]
 	dir = filepath.Dir(dir)
 	portableConfigPath := filepath.Join(dir, "portable_config.json")

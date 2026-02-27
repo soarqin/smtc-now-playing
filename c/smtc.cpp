@@ -290,8 +290,6 @@ void Smtc::checkUpdateOfThumbnail() {
             break;
         }
         auto content = reader.ReadBuffer(bufLen);
-        DWORD bytesWritten;
-        HANDLE hFile;
         currentThumbnailContentType_ = stream.ContentType();
         currentThumbnailData_ = std::vector<uint8_t>(content.data(), content.data() + content.Length());
         infoDirty_.store(true);

@@ -1,8 +1,7 @@
-package main
+package gui
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strconv"
@@ -13,9 +12,11 @@ import (
 	"github.com/rodrigocfd/windigo/ui"
 	"github.com/rodrigocfd/windigo/win"
 	"github.com/soarqin/go-webview2"
+	"smtc-now-playing/internal/config"
+	"smtc-now-playing/internal/server"
+	"smtc-now-playing/internal/webview"
 )
 
-// This struct represents our main window.
 type Gui struct {
 	wnd                  *ui.Main
 	lblPort              *ui.Static
@@ -30,39 +31,34 @@ type Gui struct {
 	cbPreviewAlwaysOnTop *ui.CheckBox
 	infoText             *ui.Edit
 
-	srv        *WebServer
-	smtc       *Smtc
-	webViewWin webview2.WebView
+	srv               *server.WebServer
+	webViewWin        *webview.Preview
+	msgTaskbarCreated co.WM
 }
 
-var (
-	notifyIcon        *NotifyIcon
-	msgTaskbarCreated co.WM
-)
+var notifyIcon *NotifyIcon
 
-// Systray menu item IDs
 const (
-	SYSTRAY_MENU_SHOW_HIDE  = 1001 // Show/Hide Window
-	SYSTRAY_MENU_START_STOP = 1002 // Start/Stop Server
-	SYSTRAY_MENU_EXIT       = 1003 // Exit
+	SYSTRAY_MENU_SHOW_HIDE  = 1001
+	SYSTRAY_MENU_START_STOP = 1002
+	SYSTRAY_MENU_EXIT       = 1003
 )
 
-// Creates a new instance of our main window.
-func NewGui( /*g ProcessExitGroup*/ ) *Gui {
+func New() *Gui {
 	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--enable-features=msWebView2EnableDraggableRegions")
 
 	optsMain := ui.OptsMain()
-	if config.StartMinimized {
+	if config.Get().StartMinimized {
 		optsMain.CmdShow(co.SW_HIDE)
 	}
-	wnd := ui.NewMain( // create the main window
+	wnd := ui.NewMain(
 		optsMain.
 			Title("SMTC Now Playing").
 			Size(ui.Dpi(370, 260)).
-			ClassIconId(0), // ID of icon resource, see resources folder
+			ClassIconId(0),
 	)
 
-	lblPort := ui.NewStatic( // create the child controls
+	lblPort := ui.NewStatic(
 		wnd,
 		ui.OptsStatic().
 			Text("Port").
@@ -134,22 +130,27 @@ func NewGui( /*g ProcessExitGroup*/ ) *Gui {
 			Height(ui.DpiY(100)),
 	)
 
-	me := &Gui{wnd, lblPort, portEdit, ud, lblTheme, themeCombo, btnStart, cbAutoStart, cbStartMinimized, cbShowPreviewWindow, cbPreviewAlwaysOnTop, urlText /*g,*/, nil, nil, nil}
+	me := &Gui{
+		wnd: wnd, lblPort: lblPort, portEdit: portEdit, portUd: ud,
+		lblTheme: lblTheme, themeCombo: themeCombo, btnStart: btnStart,
+		cbAutoStart: cbAutoStart, cbStartMinimized: cbStartMinimized,
+		cbShowPreviewWindow: cbShowPreviewWindow, cbPreviewAlwaysOnTop: cbPreviewAlwaysOnTop,
+		infoText: urlText,
+	}
 	me.events()
 	return me
 }
 
 func (me *Gui) events() {
 	me.wnd.On().WmCreate(func(p ui.WmCreate) int {
-		me.portUd.SetValue(config.Port)
-		me.portEdit.SetText(fmt.Sprintf("%d", config.Port))
-		me.cbAutoStart.SetCheck(config.AutoStart)
-		me.cbStartMinimized.SetCheck(config.StartMinimized)
-		me.cbShowPreviewWindow.SetCheck(config.ShowPreviewWindow)
-		me.cbPreviewAlwaysOnTop.SetCheck(config.PreviewAlwaysOnTop)
+		me.portUd.SetValue(config.Get().Port)
+		me.portEdit.SetText(fmt.Sprintf("%d", config.Get().Port))
+		me.cbAutoStart.SetCheck(config.Get().AutoStart)
+		me.cbStartMinimized.SetCheck(config.Get().StartMinimized)
+		me.cbShowPreviewWindow.SetCheck(config.Get().ShowPreviewWindow)
+		me.cbPreviewAlwaysOnTop.SetCheck(config.Get().PreviewAlwaysOnTop)
 		me.btnStart.Hwnd().EnableWindow(true)
 
-		// List themes in folder and add them to combobox
 		themes, err := os.ReadDir("themes")
 		if err != nil {
 			me.wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)
@@ -159,14 +160,14 @@ func (me *Gui) events() {
 		i := 0
 		for _, theme := range themes {
 			me.themeCombo.Items.Add(theme.Name())
-			if theme.Name() == config.Theme {
+			if theme.Name() == config.Get().Theme {
 				toSelect = i
 			}
 			i++
 		}
 		me.themeCombo.Items.Select(toSelect)
 
-		msgTaskbarCreated, err = win.RegisterWindowMessage("TaskbarCreated")
+		me.msgTaskbarCreated, err = win.RegisterWindowMessage("TaskbarCreated")
 		if err != nil {
 			panic(err)
 		}
@@ -187,13 +188,13 @@ func (me *Gui) events() {
 			me.wnd.Hwnd().SendMessage(co.WM_SETICON, 0, win.LPARAM(hIcon))
 			me.wnd.Hwnd().SendMessage(co.WM_SETICON, 1, win.LPARAM(hIcon))
 		}
-		if config.AutoStart {
+		if config.Get().AutoStart {
 			me.btnStart.TriggerClick()
 		}
 		return 0
 	})
 
-	me.wnd.On().Wm(msgTaskbarCreated, func(p ui.Wm) uintptr {
+	me.wnd.On().Wm(me.msgTaskbarCreated, func(p ui.Wm) uintptr {
 		if notifyIcon != nil {
 			notifyIcon.AddAfterExplorerCrash()
 		}
@@ -215,12 +216,12 @@ func (me *Gui) events() {
 				break
 			}
 
-			// Determine current states
-			style, _ := me.wnd.Hwnd().GetWindowLongPtr(co.GWLP_STYLE)
-			isWindowVisible := style&uintptr(co.WS_VISIBLE) != 0
+			isWindowVisible := false
+			if style, _ := me.wnd.Hwnd().GetWindowLongPtr(co.GWLP_STYLE); style&uintptr(co.WS_VISIBLE) != 0 {
+				isWindowVisible = true
+			}
 			isServerRunning := me.srv != nil
 
-			// Menu item: Show/Hide Window
 			showHideLabel := "Hide &Window"
 			if !isWindowVisible {
 				showHideLabel = "Show &Window"
@@ -239,7 +240,6 @@ func (me *Gui) events() {
 			mii.SetCbSize()
 			popup.InsertMenuItemByPos(0, mii)
 
-			// Menu item: Start/Stop Server
 			startStopLabel := "Stop &Server"
 			if !isServerRunning {
 				startStopLabel = "Start &Server"
@@ -258,7 +258,6 @@ func (me *Gui) events() {
 			mii.SetCbSize()
 			popup.InsertMenuItemByPos(1, mii)
 
-			// Separator
 			mii = &win.MENUITEMINFO{
 				FMask: co.MIIM_FTYPE,
 				FType: co.MFT_SEPARATOR,
@@ -266,7 +265,6 @@ func (me *Gui) events() {
 			mii.SetCbSize()
 			popup.InsertMenuItemByPos(2, mii)
 
-			// Menu item: Exit
 			utf16Ptr, err = syscall.UTF16PtrFromString("E&xit")
 			if err != nil {
 				popup.DestroyMenu()
@@ -281,7 +279,6 @@ func (me *Gui) events() {
 			mii.SetCbSize()
 			popup.InsertMenuItemByPos(3, mii)
 
-			// Display and handle menu
 			pos, err := win.GetCursorPos()
 			if err != nil {
 				popup.DestroyMenu()
@@ -294,7 +291,6 @@ func (me *Gui) events() {
 				break
 			}
 
-			// Handle menu selection
 			switch res {
 			case SYSTRAY_MENU_SHOW_HIDE:
 				if isWindowVisible {
@@ -308,7 +304,7 @@ func (me *Gui) events() {
 					me.stopWebServer()
 				} else {
 					me.syncConfig()
-					SaveConfig()
+					config.Save()
 					me.startWebServer()
 				}
 			case SYSTRAY_MENU_EXIT:
@@ -337,8 +333,8 @@ func (me *Gui) events() {
 	me.themeCombo.On().CbnSelChange(func() {
 		if me.srv != nil {
 			me.srv.SetTheme(me.themeCombo.Text())
-			config.Theme = me.themeCombo.Text()
-			SaveConfig()
+			config.Get().Theme = me.themeCombo.Text()
+			config.Save()
 		}
 	})
 
@@ -348,23 +344,23 @@ func (me *Gui) events() {
 			return
 		}
 		me.syncConfig()
-		SaveConfig()
+		config.Save()
 		me.startWebServer()
 	})
 
 	me.cbAutoStart.On().BnClicked(func() {
 		me.syncConfig()
-		SaveConfig()
+		config.Save()
 	})
 
 	me.cbStartMinimized.On().BnClicked(func() {
 		me.syncConfig()
-		SaveConfig()
+		config.Save()
 	})
 
 	me.cbShowPreviewWindow.On().BnClicked(func() {
 		me.syncConfig()
-		SaveConfig()
+		config.Save()
 		if me.srv == nil {
 			return
 		}
@@ -377,7 +373,7 @@ func (me *Gui) events() {
 
 	me.cbPreviewAlwaysOnTop.On().BnClicked(func() {
 		me.syncConfig()
-		SaveConfig()
+		config.Save()
 		if me.webViewWin == nil {
 			return
 		}
@@ -395,18 +391,18 @@ func (me *Gui) events() {
 func (me *Gui) syncConfig() {
 	port, err := strconv.Atoi(me.portEdit.Text())
 	if err == nil {
-		config.Port = port
+		config.Get().Port = port
 	}
-	config.Theme = me.themeCombo.Text()
-	config.AutoStart = me.cbAutoStart.IsChecked()
-	config.StartMinimized = me.cbStartMinimized.IsChecked()
-	config.ShowPreviewWindow = me.cbShowPreviewWindow.IsChecked()
-	config.PreviewAlwaysOnTop = me.cbPreviewAlwaysOnTop.IsChecked()
+	config.Get().Theme = me.themeCombo.Text()
+	config.Get().AutoStart = me.cbAutoStart.IsChecked()
+	config.Get().StartMinimized = me.cbStartMinimized.IsChecked()
+	config.Get().ShowPreviewWindow = me.cbShowPreviewWindow.IsChecked()
+	config.Get().PreviewAlwaysOnTop = me.cbPreviewAlwaysOnTop.IsChecked()
 }
 
 func (me *Gui) startWebServer() {
 	me.btnStart.Hwnd().EnableWindow(false)
-	me.srv = NewWebServer("0.0.0.0", me.portEdit.Text(), me.themeCombo.Text())
+	me.srv = server.New("0.0.0.0", me.portEdit.Text(), me.themeCombo.Text())
 	srvErrChan := me.srv.Error()
 	go func() {
 		for err := range srvErrChan {
@@ -419,7 +415,6 @@ func (me *Gui) startWebServer() {
 	addr := me.srv.Address()
 	addresses := []string{}
 	if strings.HasPrefix(addr, "0.0.0.0:") {
-		// Get all addresses on the machine
 		addrs, err := net.InterfaceAddrs()
 		if err != nil {
 			me.wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)
@@ -427,7 +422,6 @@ func (me *Gui) startWebServer() {
 		}
 		port := addr[len("0.0.0.0:"):]
 		for _, addr := range addrs {
-			// Check if addr is IPv4, if not, skip
 			saddr := addr.String()
 			ip, _, err := net.ParseCIDR(saddr)
 			if err != nil {
@@ -473,18 +467,9 @@ func (me *Gui) createWebView() {
 	if me.webViewWin != nil {
 		return
 	}
-	var webViewOptions = webview2.WebViewOptions{
-		Debug:     true,
-		AutoFocus: true,
-		WindowOptions: webview2.WindowOptions{
-			Title:           "SMTC Now Playing",
-			Width:           600,
-			Height:          400,
-			IconId:          0,
-			Center:          true,
-			Borderless:      true,
-			BackgroundColor: &webview2.Color{R: 0, G: 0, B: 0, A: 0},
-		},
+	me.webViewWin = webview.New(webview.Options{
+		URL:         "http://127.0.0.1:" + me.portEdit.Text(),
+		AlwaysOnTop: me.cbPreviewAlwaysOnTop.IsChecked(),
 		OnDestroy: func() {
 			if me.srv == nil {
 				return
@@ -495,17 +480,10 @@ func (me *Gui) createWebView() {
 			}
 			me.cbShowPreviewWindow.SetCheck(false)
 		},
-	}
-
-	me.webViewWin = webview2.NewWithOptions(webViewOptions)
-	if me.webViewWin == nil {
-		log.Fatalln("Failed to load webview.")
-	}
-	me.webViewWin.Bind("rootLoaded", func(left int, top int, width int, height int) {
-		me.webViewWin.SetSize(left+width, top+height, webview2.HintFixed)
+		OnRootLoaded: func(left int, top int, width int, height int) {
+			me.webViewWin.SetSize(left+width, top+height, webview2.HintFixed)
+		},
 	})
-	me.webViewWin.SetSize(600, 400, webview2.HintFixed)
-	me.webViewWin.Navigate("http://127.0.0.1:" + me.portEdit.Text())
 	me.updateWebViewAlwaysOnTop()
 }
 
@@ -517,6 +495,9 @@ func (me *Gui) destroyWebView() {
 }
 
 func (me *Gui) updateWebViewAlwaysOnTop() {
+	if me.webViewWin == nil {
+		return
+	}
 	hwnd := win.HWND(me.webViewWin.Window())
 	if me.cbPreviewAlwaysOnTop.IsChecked() {
 		HWND_TOPMOST := -1
@@ -525,4 +506,8 @@ func (me *Gui) updateWebViewAlwaysOnTop() {
 		HWND_NOTOPMOST := -2
 		hwnd.SetWindowPos(win.HWND(HWND_NOTOPMOST), 0, 0, 0, 0, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
 	}
+}
+
+func (me *Gui) Run() int {
+	return me.wnd.RunAsMain()
 }
