@@ -97,9 +97,13 @@ func (s *Smtc) RetrieveDirtyData(artist *string, title *string, thumbnailContent
 		}
 		if thumbnailContentType_c != nil {
 			*thumbnailContentType = windows.UTF16PtrToString(thumbnailContentType_c)
+		} else {
+			*thumbnailContentType = ""
 		}
 		if thumbnailData_c != nil && thumbnailLength_c > 0 {
 			*thumbnailData = unsafe.Slice(thumbnailData_c, thumbnailLength_c)
+		} else {
+			*thumbnailData = nil
 		}
 	}
 	if result&2 != 0 {
