@@ -4,30 +4,32 @@ package main
 
 import (
 	"fmt"
-	"time"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"smtc-now-playing/internal/smtc"
 )
 
 func main() {
-	smtc := smtc.New()
-	smtc.Init()
-	artist := ""
-	title := ""
-	thumbnailContentType := ""
-	thumbnailData := []byte{}
-	position := 0
-	duration := 0
-	status := 0
-	for {
-		time.Sleep(200 * time.Millisecond)
-		smtc.Update()
-		dirty := smtc.RetrieveDirtyData(&artist, &title, &thumbnailContentType, &thumbnailData, &position, &duration, &status)
-		if dirty&1 != 0 {
-			fmt.Println(artist, title, thumbnailContentType)
-		}
-		if dirty&2 != 0 {
-			fmt.Println(position, duration, status)
-		}
+	s := smtc.New(smtc.Options{
+		OnInfo: func(data smtc.InfoData) {
+			fmt.Println(data.Artist, data.Title, data.ThumbnailContentType)
+		},
+		OnProgress: func(data smtc.ProgressData) {
+			fmt.Println(data.Position, data.Duration, data.Status)
+		},
+	})
+
+	if err := s.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to start: %v\n", err)
+		os.Exit(1)
 	}
+
+	// Block until Ctrl+C
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+
+	s.Stop()
 }
