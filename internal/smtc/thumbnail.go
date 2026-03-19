@@ -17,12 +17,12 @@ import (
 // These are stable Windows SDK constants; not present in the winrt-go streams package.
 const (
 	// IRandomAccessStream — provides Size and GetInputStreamAt.
-	// IID: {00000905-0000-0000-C000-000000000046}
-	guidIRandomAccessStream = "00000905-0000-0000-c000-000000000046"
+	// IID from Windows SDK windows.storage.streams.h: {905A0FE1-BC53-11DF-8C49-001E4FC686DA}
+	guidIRandomAccessStream = "905a0fe1-bc53-11df-8c49-001e4fc686da"
 
 	// IContentTypeProvider — provides ContentType on IRandomAccessStreamWithContentType.
-	// IID: {905A0FE6-BC53-11DF-8C49-001E4FC686DA}
-	guidIContentTypeProvider = "905a0fe6-bc53-11df-8c49-001e4fc686da"
+	// IID from Windows SDK windows.storage.streams.h: {97D098A5-3B99-4DE9-88A5-E11D2F50C795}
+	guidIContentTypeProvider = "97d098a5-3b99-4de9-88a5-e11d2f50c795"
 
 	// IInputStream — provides ReadAsync.
 	// IID: {905A0FE2-BC53-11DF-8C49-001E4FC686DA}
@@ -47,18 +47,30 @@ func init() {
 // --- Minimal COM vtable wrappers for WinRT interfaces not in winrt-go ---
 
 // iRandomAccessStreamVtbl mirrors the vtable layout of IRandomAccessStream.
-// Methods beyond getInputStreamAt are padding to preserve correct offsets.
+// Layout from Windows SDK windows.storage.streams.h (IID: 905a0fe1):
+//
+//	[0-2]  IUnknown (QI, AddRef, Release)
+//	[3-5]  IInspectable (GetIids, GetRTC, GetTL)
+//	[6]    get_Size(UINT64*) -> HRESULT
+//	[7]    put_Size(UINT64) -> HRESULT
+//	[8]    GetInputStreamAt(UINT64, IInputStream**) -> HRESULT
+//	[9]    GetOutputStreamAt(UINT64, IOutputStream**) -> HRESULT
+//	[10]   get_Position(UINT64*) -> HRESULT
+//	[11]   Seek(UINT64) -> HRESULT
+//	[12]   CloneStream(IRandomAccessStream**) -> HRESULT
+//	[13]   get_CanRead(boolean*) -> HRESULT
+//	[14]   get_CanWrite(boolean*) -> HRESULT
 type iRandomAccessStreamVtbl struct {
 	ole.IInspectableVtbl         // [0-5]: QI, AddRef, Release, GetIids, GetRTC, GetTL
 	getSize              uintptr // [6]: get_Size -> UINT64
 	putSize              uintptr // [7]: put_Size <- UINT64 (unused)
 	getInputStreamAt     uintptr // [8]: GetInputStreamAt(UINT64) -> IInputStream*
-	// remaining methods unused
-	_getOutputStreamAt uintptr // [9]
-	_seek              uintptr // [10]
-	_cloneStream       uintptr // [11]
-	_getCanRead        uintptr // [12]
-	_getCanWrite       uintptr // [13]
+	_getOutputStreamAt   uintptr // [9]: GetOutputStreamAt (unused)
+	_getPosition         uintptr // [10]: get_Position (unused)
+	_seek                uintptr // [11]: Seek (unused)
+	_cloneStream         uintptr // [12]: CloneStream (unused)
+	_getCanRead          uintptr // [13]: get_CanRead (unused)
+	_getCanWrite         uintptr // [14]: get_CanWrite (unused)
 }
 
 type iRandomAccessStream struct{ ole.IInspectable }
