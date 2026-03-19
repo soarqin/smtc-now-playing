@@ -95,56 +95,14 @@ for conn := range srv.wsConnections {
 - Use `sync.Mutex` with `defer mutex.Unlock()` pattern
 - Use `sync.WaitGroup` for goroutine coordination
 
-## C++ Code Style
-
-Based on `.editorconfig`:
-
-### Formatting
-
-- **Indentation**: 4 spaces (no tabs)
-- **Braces**: K&R style (opening brace on same line)
-- **Pointer alignment**: Left-aligned (`int* ptr`, `const wchar_t** artist`)
-- **Spaces**: 
-  - Space after keywords in control flow
-  - Space before block open brace
-  - Space around binary operators
-  - No space before comma, space after comma
-
-### Naming Conventions
-
-```cpp
-class Smtc {
-public:
-    Smtc();
-    ~Smtc();
-    int init();
-    void update();
-private:
-    std::wstring currentArtist_;
-    int currentPosition_ = 0;
-};
-```
-
-- **Classes**: PascalCase (e.g., `Smtc`)
-- **Functions/Methods**: camelCase (e.g., `retrieveDirtyData`)
-- **Member variables**: camelCase with trailing underscore (e.g., `currentArtist_`)
-- **Private methods**: camelCase
-
-### C++/WinRT Specifics
-
-- Use `winrt` namespace for WinRT types
-- Use `nullptr` for null pointers
-- Use `std::wstring` for UTF-16 strings
-- Use `std::atomic` for thread-safe flags
-
 ## Architecture
 
 ### Data Flow
 
 ```
-Windows SMTC → smtc.dll → internal/smtc → internal/server → WebSocket → Web Browser
-                              ↓
-                        internal/gui → WebView2 (optional preview)
+Windows SMTC → winrt-go (WinRT COM) → internal/smtc → internal/server → WebSocket → Web Browser
+                                           ↓
+                                     internal/gui → WebView2 (optional preview)
 ```
 
 ### Package Dependencies
@@ -157,16 +115,11 @@ main.go → internal/gui → internal/config
 
 No circular dependencies. Each internal package has a single responsibility.
 
-### DLL Interface
+### SMTC Interface
 
-The C++ DLL uses a "dirty flag" pattern:
-
-```cpp
-// Returns bitmask indicating changed fields
-// Bit 0: info dirty (artist, title, thumbnail)
-// Bit 1: progress dirty (position, duration, status)
-unsigned int RetrieveDirtyData();
-```
+The Go smtc package uses an event-driven architecture:
+- `OnInfo` callback: fired when artist/title/thumbnail changes
+- `OnProgress` callback: fired every 200ms with position/duration/status
 
 ### WebSocket Protocol
 
@@ -185,13 +138,9 @@ Two modes:
 
 ### Go
 
-- `github.com/ebitengine/purego` - FFI for calling C DLL without CGo
+- `github.com/saltosystems/winrt-go` - WinRT COM bindings for SMTC
+- `github.com/go-ole/go-ole` - WinRT COM foundation (RoInitialize, IUnknown)
 - `github.com/lxzan/gws` - WebSocket server
 - `github.com/rodrigocfd/windigo` - Win32 GUI bindings
 - `github.com/soarqin/go-webview2` - WebView2 wrapper
 - `golang.org/x/sys` - Windows syscall support
-
-### C++
-
-- Windows SDK
-- C++/WinRT (via NuGet in CMakeLists.txt)
