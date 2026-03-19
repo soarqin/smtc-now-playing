@@ -19,15 +19,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Set up Visual Studio
-        uses: microsoft/setup-msbuild@v1
-
-      - name: Build C++ DLL
-        run: |
-          mkdir build
-          cmake -B build -Hc -G "Visual Studio 17 2022"
-          cmake --build build --config MinSizeRel --target smtc_c
-
       - name: Build Go executable
         run: go build -ldflags="-s -w -H windowsgui" -o SmtcNowPlaying.exe
 
@@ -65,7 +56,6 @@ jobs:
           copy README.md release_content\
           copy LICENSE release_content\
           copy CHANGELOG.md release_content\
-          copy build\bin\smtc.dll release_content\
           copy SmtcNowPlaying.exe release_content\
           xcopy themes release_content\themes /E /I /Y
           xcopy script release_content\script /E /I /Y
