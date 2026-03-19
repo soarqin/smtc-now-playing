@@ -44,7 +44,7 @@ const (
 	SYSTRAY_MENU_EXIT       = 1003
 )
 
-func New() *Gui {
+func New(version string) *Gui {
 	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--enable-features=msWebView2EnableDraggableRegions")
 
 	optsMain := ui.OptsMain()
@@ -53,7 +53,7 @@ func New() *Gui {
 	}
 	wnd := ui.NewMain(
 		optsMain.
-			Title("SMTC Now Playing").
+			Title("SMTC Now Playing v" + version).
 			Size(ui.Dpi(370, 260)).
 			ClassIconId(0),
 	)

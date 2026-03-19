@@ -45,6 +45,6 @@ func main() {
 	}
 	defer syscall.CloseHandle(syscall.Handle(mutex))
 
-	gui := gui.New()
+	gui := gui.New(Version)
 	os.Exit(gui.Run())
 }
