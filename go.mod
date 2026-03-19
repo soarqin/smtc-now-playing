@@ -11,7 +11,8 @@ require (
 )
 
 require (
-	github.com/dolthub/maphash v0.1.0 // indirect
+	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/saltosystems/winrt-go v0.0.0-20260317170058-9c2fec580d96 // indirect
 )
