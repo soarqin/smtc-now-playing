@@ -1,115 +1,103 @@
+//go:build windows
+
 package smtc
 
 import (
-	"path/filepath"
 	"runtime"
-	"syscall"
-	"unsafe"
+	"time"
 
-	"github.com/ebitengine/purego"
-	"golang.org/x/sys/windows"
+	"github.com/go-ole/go-ole"
+	"github.com/saltosystems/winrt-go/windows/foundation"
+	"github.com/saltosystems/winrt-go/windows/media/control"
 )
 
-var (
-	libHandle uintptr
-
-	smtcCreate            func() unsafe.Pointer
-	smtcDestroy           func(smtc unsafe.Pointer)
-	smtcInit              func(smtc unsafe.Pointer) int32
-	smtcUpdate            func(smtc unsafe.Pointer)
-	smtcRetrieveDirtyData func(smtc unsafe.Pointer, artist **uint16, title **uint16, thumbnailContentType **uint16, thumbnailData **uint8, thumbnailLength *int32, position *int32, duration *int32, status *int32) int32
-)
-
-var (
-	artist_c               *uint16
-	title_c                *uint16
-	thumbnailContentType_c *uint16
-	thumbnailData_c        *uint8
-	thumbnailLength_c      int32
-)
-
-func openLibrary(name string) (uintptr, error) {
-	handle, err := syscall.LoadLibrary(name)
-	return uintptr(handle), err
-}
-
-func init() {
-	if runtime.GOOS == "windows" {
-		var err error
-		libHandle, err = openLibrary("smtc.dll")
-		if err != nil {
-			var exePathBuf [260]uint16
-			exePathLen, _ := windows.GetModuleFileName(0, &exePathBuf[0], uint32(len(exePathBuf)))
-			if exePathLen > 0 {
-				exePath := windows.UTF16ToString(exePathBuf[:exePathLen])
-				exeDir := filepath.Dir(exePath)
-				dllPath := filepath.Join(exeDir, "smtc.dll")
-				libHandle, err = openLibrary(dllPath)
-			}
-			if err != nil {
-				panic("Failed to load smtc.dll: " + err.Error())
-			}
-		}
-	} else {
-		panic("Unsupported platform: " + runtime.GOOS)
-	}
-
-	purego.RegisterLibFunc(&smtcCreate, libHandle, "smtc_create")
-	purego.RegisterLibFunc(&smtcDestroy, libHandle, "smtc_destroy")
-	purego.RegisterLibFunc(&smtcInit, libHandle, "smtc_init")
-	purego.RegisterLibFunc(&smtcUpdate, libHandle, "smtc_update")
-	purego.RegisterLibFunc(&smtcRetrieveDirtyData, libHandle, "smtc_retrieve_dirty_data")
-}
-
+// Smtc manages Windows System Media Transport Controls with callback-based updates
 type Smtc struct {
-	smtc unsafe.Pointer
+	opts     Options
+	quitChan chan struct{}
+
+	// Session management
+	sessionManager *control.GlobalSystemMediaTransportControlsSessionManager
+	currentSession *control.GlobalSystemMediaTransportControlsSession
+
+	// Event tokens for cleanup
+	sessionChangedToken         foundation.EventRegistrationToken
+	mediaPropertiesChangedToken foundation.EventRegistrationToken
+	playbackInfoChangedToken    foundation.EventRegistrationToken
+
+	// Current state (for change detection and deduplication)
+	currentArtist        string
+	currentTitle         string
+	currentStatus        int
+	currentThumbnailSize uint64
+
+	// Progress tracking (Task 7)
+	currentPosition int
+	currentDuration int
+	progressTicker  *time.Ticker
+
+	// currentProperties holds the latest media properties object, used by thumbnail reading (Task 6).
+	currentProperties *control.GlobalSystemMediaTransportControlsSessionMediaProperties
 }
 
-func New() *Smtc {
-	return &Smtc{smtc: smtcCreate()}
-}
-
-func (s *Smtc) Destroy() {
-	smtcDestroy(s.smtc)
-}
-
-func (s *Smtc) Init() int {
-	return int(smtcInit(s.smtc))
-}
-
-func (s *Smtc) Update() {
-	smtcUpdate(s.smtc)
-}
-
-func (s *Smtc) RetrieveDirtyData(artist *string, title *string, thumbnailContentType *string, thumbnailData *[]byte, position *int, duration *int, status *int) int {
-	var position_c int32
-	var duration_c int32
-	var status_c int32
-
-	result := int(smtcRetrieveDirtyData(s.smtc, &artist_c, &title_c, &thumbnailContentType_c, &thumbnailData_c, &thumbnailLength_c, &position_c, &duration_c, &status_c))
-
-	if result&1 != 0 {
-		if artist_c != nil {
-			*artist = windows.UTF16PtrToString(artist_c)
-		}
-		if title_c != nil {
-			*title = windows.UTF16PtrToString(title_c)
-		}
-		if thumbnailContentType_c != nil {
-			*thumbnailContentType = windows.UTF16PtrToString(thumbnailContentType_c)
-		} else {
-			*thumbnailContentType = ""
-		}
-		if thumbnailData_c != nil && thumbnailLength_c > 0 {
-			*thumbnailData = unsafe.Slice(thumbnailData_c, thumbnailLength_c)
-		} else {
-			*thumbnailData = nil
-		}
+// New creates a new Smtc instance with the given options
+func New(opts Options) *Smtc {
+	return &Smtc{
+		opts:     opts,
+		quitChan: make(chan struct{}),
 	}
-	if result&2 != 0 {
-		*position = int(position_c)
-		*duration = int(duration_c)
-		*status = int(status_c)
-	}
-	return result
+}
+
+// Start begins monitoring SMTC for media changes.
+// Launches a dedicated goroutine that initializes COM (MTA), creates the session manager,
+// subscribes to events, and runs the progress ticker event loop.
+func (s *Smtc) Start() error {
+	go func() {
+		// Lock this goroutine to its OS thread so WinRT COM objects stay on a single thread.
+		runtime.LockOSThread()
+
+		// Initialize WinRT apartment as MTA (1 = COINIT_MULTITHREADED).
+		// Must be called on the locked OS thread before any WinRT calls.
+		if err := ole.RoInitialize(1); err != nil {
+			// MTA initialization failed — this is fatal, bail out.
+			return
+		}
+		defer roUninitialize()
+
+		if err := s.initSessionManager(); err != nil {
+			return
+		}
+
+		// If there is an initial session, read its media properties immediately
+		// so the caller gets the current track on startup without waiting for an event.
+		if s.currentSession != nil {
+			s.handleMediaPropertiesChanged()
+		}
+
+		s.startProgressTimer()
+		defer s.stopProgressTimer()
+
+		// Event loop: drive the progress ticker and respond to quit signal.
+		for {
+			select {
+			case <-s.quitChan:
+				// Cleanup: remove all WinRT event subscriptions before exiting.
+				if s.currentSession != nil {
+					s.unsubscribePropertyEvents()
+				}
+				if s.sessionManager != nil {
+					_ = s.sessionManager.RemoveCurrentSessionChanged(s.sessionChangedToken)
+				}
+				return
+			case <-s.progressTicker.C:
+				s.readTimelineAndProgress()
+			}
+		}
+	}()
+	return nil
+}
+
+// Stop stops monitoring SMTC by signalling the dedicated goroutine to exit.
+func (s *Smtc) Stop() {
+	close(s.quitChan)
 }

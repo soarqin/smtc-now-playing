@@ -1,0 +1,7 @@
+=== RoInitialize location ===
+internal/smtc/smtc.go:57:		runtime.LockOSThread()
+internal/smtc/smtc.go:61:		if err := ole.RoInitialize(1); err != nil {
+internal/smtc/smtc.go:65:		defer roUninitialize()
+internal/smtc/helpers.go:26:// roUninitialize calls RoUninitialize from combase.dll — the proper counterpart to
+internal/smtc/helpers.go:27:// ole.RoInitialize. Must be called once for each successful RoInitialize call.
+internal/smtc/helpers.go:28:func roUninitialize() {
