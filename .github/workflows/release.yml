@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Set up Visual Studio
+        uses: microsoft/setup-msbuild@v1
+
+      - name: Build C++ DLL
+        run: |
+          mkdir build
+          cmake -B build -Hc -G "Visual Studio 17 2022"
+          cmake --build build --config MinSizeRel --target smtc_c
+
+      - name: Build Go executable
+        run: go build -ldflags="-s -w -H windowsgui" -o SmtcNowPlaying.exe
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          $tag = "${{ github.ref }}" -replace 'refs/tags/v', ''
+          echo "version=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Extract changelog for version
+        id: changelog
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $changelogPath = "CHANGELOG.md"
+          $content = Get-Content $changelogPath -Raw
+          
+          # Extract section for this version
+          $pattern = "## \[$version\].*?(?=## \[|$)"
+          if ($content -match $pattern) {
+            $section = $matches[0].Trim()
+            # Remove the version header line to get just the content
+            $section = $section -replace "## \[$version\].*?\n", ""
+            $section = $section.Trim()
+          } else {
+            $section = "See CHANGELOG.md for details"
+          }
+          
+          # Escape for GitHub Actions
+          $section = $section -replace "`n", "%0A"
+          echo "body=$section" >> $env:GITHUB_OUTPUT
+
+      - name: Create release archive
+        run: |
+          mkdir release_content
+          copy README.md release_content\
+          copy LICENSE release_content\
+          copy CHANGELOG.md release_content\
+          copy build\bin\smtc.dll release_content\
+          copy SmtcNowPlaying.exe release_content\
+          xcopy themes release_content\themes /E /I /Y
+          xcopy script release_content\script /E /I /Y
+          
+          cd release_content
+          Compress-Archive -Path * -DestinationPath ..\SmtcNowPlaying-${{ steps.version.outputs.version }}.zip
+          cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/SmtcNowPlaying.exe
+            SmtcNowPlaying-${{ steps.version.outputs.version }}.zip
+          body: ${{ steps.changelog.outputs.body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
