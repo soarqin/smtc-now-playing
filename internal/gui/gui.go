@@ -8,13 +8,14 @@ import (
 	"strings"
 	"syscall"
 
+	"smtc-now-playing/internal/config"
+	"smtc-now-playing/internal/server"
+	"smtc-now-playing/internal/webview"
+
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/ui"
 	"github.com/rodrigocfd/windigo/win"
 	"github.com/soarqin/go-webview2"
-	"smtc-now-playing/internal/config"
-	"smtc-now-playing/internal/server"
-	"smtc-now-playing/internal/webview"
 )
 
 type Gui struct {
@@ -159,13 +160,13 @@ func (me *Gui) events() {
 		toSelect := 0
 		i := 0
 		for _, theme := range themes {
-			me.themeCombo.Items.Add(theme.Name())
+			me.themeCombo.AddItem(theme.Name())
 			if theme.Name() == config.Get().Theme {
 				toSelect = i
 			}
 			i++
 		}
-		me.themeCombo.Items.Select(toSelect)
+		me.themeCombo.SelectIndex(toSelect)
 
 		me.msgTaskbarCreated, err = win.RegisterWindowMessage("TaskbarCreated")
 		if err != nil {
@@ -332,8 +333,8 @@ func (me *Gui) events() {
 
 	me.themeCombo.On().CbnSelChange(func() {
 		if me.srv != nil {
-			me.srv.SetTheme(me.themeCombo.Text())
-			config.Get().Theme = me.themeCombo.Text()
+			me.srv.SetTheme(me.themeCombo.CurrentText())
+			config.Get().Theme = me.themeCombo.CurrentText()
 			config.Save()
 		}
 	})
@@ -393,7 +394,7 @@ func (me *Gui) syncConfig() {
 	if err == nil {
 		config.Get().Port = port
 	}
-	config.Get().Theme = me.themeCombo.Text()
+	config.Get().Theme = me.themeCombo.CurrentText()
 	config.Get().AutoStart = me.cbAutoStart.IsChecked()
 	config.Get().StartMinimized = me.cbStartMinimized.IsChecked()
 	config.Get().ShowPreviewWindow = me.cbShowPreviewWindow.IsChecked()
@@ -402,7 +403,7 @@ func (me *Gui) syncConfig() {
 
 func (me *Gui) startWebServer() {
 	me.btnStart.Hwnd().EnableWindow(false)
-	me.srv = server.New("0.0.0.0", me.portEdit.Text(), me.themeCombo.Text())
+	me.srv = server.New("0.0.0.0", me.portEdit.Text(), me.themeCombo.CurrentText())
 	srvErrChan := me.srv.Error()
 	go func() {
 		for err := range srvErrChan {
@@ -501,10 +502,10 @@ func (me *Gui) updateWebViewAlwaysOnTop() {
 	hwnd := win.HWND(me.webViewWin.Window())
 	if me.cbPreviewAlwaysOnTop.IsChecked() {
 		HWND_TOPMOST := -1
-		hwnd.SetWindowPos(win.HWND(HWND_TOPMOST), 0, 0, 0, 0, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
+		hwnd.SetWindowPos(win.HWND(HWND_TOPMOST), win.POINT{X: 0, Y: 0}, win.SIZE{Cx: 0, Cy: 0}, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
 	} else {
 		HWND_NOTOPMOST := -2
-		hwnd.SetWindowPos(win.HWND(HWND_NOTOPMOST), 0, 0, 0, 0, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
+		hwnd.SetWindowPos(win.HWND(HWND_NOTOPMOST), win.POINT{X: 0, Y: 0}, win.SIZE{Cx: 0, Cy: 0}, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
 	}
 }
 

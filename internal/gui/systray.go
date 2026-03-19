@@ -12,7 +12,7 @@ const NotifyIconMsg = co.WM_APP + 1
 
 type NotifyIcon struct {
 	hwnd win.HWND
-	guid win.GUID
+	guid co.GUID
 }
 
 func NewNotifyIcon(hwnd win.HWND) (*NotifyIcon, error) {
@@ -89,8 +89,8 @@ func (ni *NotifyIcon) newData() *win.NOTIFYICONDATA {
 	return &nid
 }
 
-func newGUID() win.GUID {
+func newGUID() co.GUID {
 	buf := [16]byte{}
 	rand.Read(buf[:])
-	return *(*win.GUID)(unsafe.Pointer(&buf[0]))
+	return *(*co.GUID)(unsafe.Pointer(&buf[0]))
 }

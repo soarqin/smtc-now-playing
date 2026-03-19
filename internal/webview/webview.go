@@ -71,10 +71,10 @@ func (wv *Preview) SetAlwaysOnTop(alwaysOnTop bool) {
 	hwnd := win.HWND(wv.webViewWin.Window())
 	if alwaysOnTop {
 		HWND_TOPMOST := -1
-		hwnd.SetWindowPos(win.HWND(HWND_TOPMOST), 0, 0, 0, 0, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
+		hwnd.SetWindowPos(win.HWND(HWND_TOPMOST), win.POINT{X: 0, Y: 0}, win.SIZE{Cx: 0, Cy: 0}, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
 	} else {
 		HWND_NOTOPMOST := -2
-		hwnd.SetWindowPos(win.HWND(HWND_NOTOPMOST), 0, 0, 0, 0, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
+		hwnd.SetWindowPos(win.HWND(HWND_NOTOPMOST), win.POINT{X: 0, Y: 0}, win.SIZE{Cx: 0, Cy: 0}, co.SWP_NOMOVE|co.SWP_NOSIZE|co.SWP_NOACTIVATE|co.SWP_NOOWNERZORDER)
 	}
 }
 
