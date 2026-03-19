@@ -1,8 +1,0 @@
-=== go build ./internal/smtc/... ===
-BUILD: SUCCESS
-
-=== go vet ./internal/smtc/... ===
-VET: PASS
-
-=== purego check ===
-NO PUREGO REFERENCES - OK

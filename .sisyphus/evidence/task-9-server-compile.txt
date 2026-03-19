@@ -1,5 +1,0 @@
-=== go build ./... ===
-BUILD_OK
-
-=== go vet ./... ===
-VET_OK

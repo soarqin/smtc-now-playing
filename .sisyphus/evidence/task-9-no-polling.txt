@@ -1,4 +1,0 @@
-=== Checking for ticker/polling in server.go ===
-NONE_FOUND
-
-=== grep result: no 200ms ticker polling confirmed ===
