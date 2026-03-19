@@ -98,18 +98,21 @@ func (s *Smtc) readTimelineAndProgress() {
 	}
 
 	// Only fire callback if values changed.
+	s.mu.Lock()
 	if newPosition == s.currentPosition && newDuration == s.currentDuration && newStatus == s.currentStatus {
+		s.mu.Unlock()
 		return
 	}
 	s.currentPosition = newPosition
 	s.currentDuration = newDuration
 	s.currentStatus = newStatus
+	s.mu.Unlock()
 
 	if s.opts.OnProgress != nil {
 		s.opts.OnProgress(ProgressData{
-			Position: s.currentPosition,
-			Duration: s.currentDuration,
-			Status:   s.currentStatus,
+			Position: newPosition,
+			Duration: newDuration,
+			Status:   newStatus,
 		})
 	}
 }

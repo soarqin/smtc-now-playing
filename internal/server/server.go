@@ -74,6 +74,7 @@ func (srv *WebServer) handleInfoUpdate(data smtc.InfoData) {
 	var info infoDetail
 	info.Artist = data.Artist
 	info.Title = data.Title
+	srv.currentMutex.Lock()
 	if len(data.ThumbnailData) > 0 {
 		srv.albumArtContentType = data.ThumbnailContentType
 		srv.albumArtData = data.ThumbnailData
@@ -84,6 +85,7 @@ func (srv *WebServer) handleInfoUpdate(data smtc.InfoData) {
 		srv.albumArtData = nil
 		info.AlbumArt = ""
 	}
+	srv.currentMutex.Unlock()
 	j, err := json.Marshal(&struct {
 		Type string      `json:"type"`
 		Data *infoDetail `json:"data"`
@@ -195,12 +197,16 @@ func (srv *WebServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (srv *WebServer) handleAlbumArt(w http.ResponseWriter, r *http.Request) {
-	if len(srv.albumArtData) == 0 {
+	srv.currentMutex.Lock()
+	data := srv.albumArtData
+	ct := srv.albumArtContentType
+	srv.currentMutex.Unlock()
+	if len(data) == 0 {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", srv.albumArtContentType)
-	w.Write(srv.albumArtData)
+	w.Header().Set("Content-Type", ct)
+	w.Write(data)
 }
 
 func (srv *WebServer) handleStatic(w http.ResponseWriter, r *http.Request) {
@@ -225,8 +231,10 @@ func (srv *WebServer) Start() {
 }
 
 func (srv *WebServer) Stop() {
+	srv.currentMutex.Lock()
 	srv.currentInfo = ""
 	srv.currentProgress = ""
+	srv.currentMutex.Unlock()
 	srv.wsConnectionsMutex.Lock()
 	for conn := range srv.wsConnections {
 		conn.WriteClose(1000, nil)

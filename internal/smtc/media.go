@@ -37,7 +37,7 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	escapedArtist := escape(artist)
 	escapedTitle := escape(title)
 
-	// Store properties for thumbnail access (Task 6).
+	// Store properties for thumbnail access.
 	s.currentProperties = props
 
 	// Only fire callback if artist or title actually changed.
@@ -75,7 +75,7 @@ func (s *Smtc) clearMediaInfo() {
 
 // handlePlaybackInfoChanged reads playback status from the current session and fires
 // OnProgress callback when the status changes. Position and duration are handled by
-// Task 7 (playback.go). Replicates C++ playback status handling at c/smtc.cpp.
+// readTimelineAndProgress. Replicates C++ playback status handling at c/smtc.cpp.
 func (s *Smtc) handlePlaybackInfoChanged() {
 	if s.currentSession == nil {
 		return
@@ -95,15 +95,18 @@ func (s *Smtc) handlePlaybackInfoChanged() {
 	}
 
 	newStatus := int(status)
+	s.mu.Lock()
 	if newStatus == s.currentStatus {
+		s.mu.Unlock()
 		return
 	}
 	s.currentStatus = newStatus
+	s.mu.Unlock()
 
 	if s.opts.OnProgress != nil {
 		s.opts.OnProgress(ProgressData{
-			Status: s.currentStatus,
-			// Position and Duration filled by Task 7 (playback.go).
+			Status: newStatus,
+			// Position and Duration filled by readTimelineAndProgress.
 		})
 	}
 }

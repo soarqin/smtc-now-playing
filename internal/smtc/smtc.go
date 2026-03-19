@@ -4,6 +4,7 @@ package smtc
 
 import (
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/go-ole/go-ole"
@@ -15,6 +16,7 @@ import (
 type Smtc struct {
 	opts     Options
 	quitChan chan struct{}
+	mu       sync.Mutex // protects currentStatus, currentPosition, currentDuration, currentArtist, currentTitle, currentThumbnailSize, currentProperties
 
 	// Session management
 	sessionManager *control.GlobalSystemMediaTransportControlsSessionManager
@@ -31,12 +33,12 @@ type Smtc struct {
 	currentStatus        int
 	currentThumbnailSize uint64
 
-	// Progress tracking (Task 7)
+	// Progress tracking
 	currentPosition int
 	currentDuration int
 	progressTicker  *time.Ticker
 
-	// currentProperties holds the latest media properties object, used by thumbnail reading (Task 6).
+	// currentProperties holds the latest media properties object for thumbnail reading.
 	currentProperties *control.GlobalSystemMediaTransportControlsSessionMediaProperties
 }
 

@@ -80,7 +80,7 @@ func (s *Smtc) initSessionManager() error {
 }
 
 // subscribeSessionChanged registers the CurrentSessionChanged event on the session manager.
-// The token is stored in s.sessionChangedToken for later removal (Task 8).
+// The token is stored in s.sessionChangedToken for later removal.
 func (s *Smtc) subscribeSessionChanged() {
 	handler := foundation.NewTypedEventHandler(iidCurrentSessionChangedHandler, func(
 		_ *foundation.TypedEventHandler,
@@ -112,10 +112,12 @@ func (s *Smtc) switchSession() {
 	if s.currentSession == nil {
 		// No active media session: clear all state and fire empty callbacks.
 		// Matches C++ behavior: clears fields and marks info/progress dirty.
+		s.mu.Lock()
 		s.currentArtist = ""
 		s.currentTitle = ""
 		s.currentStatus = StatusClosed
 		s.currentThumbnailSize = 0
+		s.mu.Unlock()
 		if s.opts.OnInfo != nil {
 			s.opts.OnInfo(InfoData{})
 		}
