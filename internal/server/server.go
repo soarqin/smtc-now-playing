@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/lxzan/gws"
 	"smtc-now-playing/internal/smtc"
@@ -24,7 +23,6 @@ type WebServer struct {
 	currentProgress string
 
 	errorChan           chan error
-	quitChan            chan struct{}
 	waitGroup           sync.WaitGroup
 	wsConnections       map[*gws.Conn]struct{}
 	wsConnectionsMutex  sync.Mutex
@@ -45,23 +43,24 @@ type progressDetail struct {
 }
 
 func New(host string, port string, theme string) *WebServer {
-	smtc := smtc.New()
-	if smtc.Init() != 0 {
-		return nil
-	}
-
 	mux := http.NewServeMux()
 	srv := &WebServer{
 		httpSrv: &http.Server{
 			Addr:    fmt.Sprintf("%s:%s", host, port),
 			Handler: mux,
 		},
-		smtc: smtc,
-
-		currentTheme: theme,
-
+		currentTheme:  theme,
 		wsConnections: make(map[*gws.Conn]struct{}),
 	}
+
+	srv.smtc = smtc.New(smtc.Options{
+		OnInfo: func(data smtc.InfoData) {
+			srv.handleInfoUpdate(data)
+		},
+		OnProgress: func(data smtc.ProgressData) {
+			srv.handleProgressUpdate(data)
+		},
+	})
 
 	mux.HandleFunc("/ws", srv.handleWebSocket)
 	mux.HandleFunc("/albumArt/", srv.handleAlbumArt)
@@ -69,6 +68,60 @@ func New(host string, port string, theme string) *WebServer {
 	mux.HandleFunc("/", srv.handleStatic)
 
 	return srv
+}
+
+func (srv *WebServer) handleInfoUpdate(data smtc.InfoData) {
+	var info infoDetail
+	info.Artist = data.Artist
+	info.Title = data.Title
+	if len(data.ThumbnailData) > 0 {
+		srv.albumArtContentType = data.ThumbnailContentType
+		srv.albumArtData = data.ThumbnailData
+		checksum := sha256.Sum256(data.ThumbnailData)
+		info.AlbumArt = "/albumArt/" + hex.EncodeToString(checksum[:])
+	} else {
+		srv.albumArtContentType = ""
+		srv.albumArtData = nil
+		info.AlbumArt = ""
+	}
+	j, err := json.Marshal(&struct {
+		Type string      `json:"type"`
+		Data *infoDetail `json:"data"`
+	}{Type: "info", Data: &info})
+	if err == nil {
+		infoStr := string(j)
+		srv.currentMutex.Lock()
+		if infoStr != srv.currentInfo {
+			srv.currentInfo = infoStr
+			srv.currentMutex.Unlock()
+			srv.broadcastMessage(j)
+		} else {
+			srv.currentMutex.Unlock()
+		}
+	}
+}
+
+func (srv *WebServer) handleProgressUpdate(data smtc.ProgressData) {
+	progress := progressDetail{
+		Position: data.Position,
+		Duration: data.Duration,
+		Status:   data.Status,
+	}
+	j, err := json.Marshal(&struct {
+		Type string          `json:"type"`
+		Data *progressDetail `json:"data"`
+	}{Type: "progress", Data: &progress})
+	if err == nil {
+		progressStr := string(j)
+		srv.currentMutex.Lock()
+		if progressStr != srv.currentProgress {
+			srv.currentProgress = progressStr
+			srv.currentMutex.Unlock()
+			srv.broadcastMessage(j)
+		} else {
+			srv.currentMutex.Unlock()
+		}
+	}
 }
 
 func (srv *WebServer) addWebSocketConnection(conn *gws.Conn) {
@@ -160,8 +213,7 @@ func (srv *WebServer) handleScript(w http.ResponseWriter, r *http.Request) {
 
 func (srv *WebServer) Start() {
 	srv.errorChan = make(chan error, 1)
-	srv.quitChan = make(chan struct{}, 1)
-	srv.waitGroup.Add(2)
+	srv.waitGroup.Add(1)
 	go func() {
 		err := srv.httpSrv.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
@@ -169,69 +221,7 @@ func (srv *WebServer) Start() {
 		}
 		srv.waitGroup.Done()
 	}()
-	go func() {
-		var info infoDetail
-		var progress progressDetail
-
-		ticker := time.NewTicker(200 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-srv.quitChan:
-				srv.waitGroup.Done()
-				return
-			case <-ticker.C:
-				srv.smtc.Update()
-				dirty := srv.smtc.RetrieveDirtyData(&info.Artist, &info.Title, &srv.albumArtContentType, &srv.albumArtData, &progress.Position, &progress.Duration, &progress.Status)
-				if dirty&1 != 0 {
-					if len(srv.albumArtData) > 0 {
-						checksum := sha256.Sum256(srv.albumArtData)
-						info.AlbumArt = "/albumArt/" + hex.EncodeToString(checksum[:])
-					} else {
-						info.AlbumArt = ""
-					}
-					j, err := json.Marshal(&struct {
-						Type string      `json:"type"`
-						Data *infoDetail `json:"data"`
-					}{
-						Type: "info",
-						Data: &info,
-					})
-					if err == nil {
-						infoStr := string(j)
-						srv.currentMutex.Lock()
-						if infoStr != srv.currentInfo {
-							srv.currentInfo = infoStr
-							srv.currentMutex.Unlock()
-							srv.broadcastMessage(j)
-						} else {
-							srv.currentMutex.Unlock()
-						}
-					}
-				}
-				if dirty&2 != 0 {
-					j, err := json.Marshal(&struct {
-						Type string          `json:"type"`
-						Data *progressDetail `json:"data"`
-					}{
-						Type: "progress",
-						Data: &progress,
-					})
-					if err == nil {
-						progressStr := string(j)
-						srv.currentMutex.Lock()
-						if progressStr != srv.currentProgress {
-							srv.currentProgress = progressStr
-							srv.currentMutex.Unlock()
-							srv.broadcastMessage(j)
-						} else {
-							srv.currentMutex.Unlock()
-						}
-					}
-				}
-			}
-		}
-	}()
+	srv.smtc.Start()
 }
 
 func (srv *WebServer) Stop() {
@@ -242,10 +232,9 @@ func (srv *WebServer) Stop() {
 		conn.WriteClose(1000, nil)
 	}
 	srv.wsConnectionsMutex.Unlock()
-	close(srv.quitChan)
+	srv.smtc.Stop()
 	srv.httpSrv.Close()
 	srv.waitGroup.Wait()
-	srv.smtc.Destroy()
 }
 
 func (srv *WebServer) Address() string {
