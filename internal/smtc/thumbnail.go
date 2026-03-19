@@ -261,10 +261,11 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 		return "", nil
 	}
 
-	// Step 4: Size-based deduplication — skip if stream size is unchanged.
+	// Step 4: Size-based deduplication — skip re-read if stream size is unchanged.
+	// Return the previously stored thumbnail data instead of re-reading.
 	// Replicates: if (currentThumbnailData_.size() == stream.Size()) return;
 	if size == s.currentThumbnailSize && s.currentThumbnailSize > 0 {
-		return "", nil
+		return s.currentThumbnailContentType, s.currentThumbnailData
 	}
 
 	// Step 5: Get content type via IContentTypeProvider.
@@ -338,7 +339,9 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 		return "", nil
 	}
 
-	// Update dedup state with the successfully read size.
+	// Update dedup state with the successfully read size and data.
 	s.currentThumbnailSize = size
+	s.currentThumbnailContentType = contentType
+	s.currentThumbnailData = data
 	return contentType, data
 }

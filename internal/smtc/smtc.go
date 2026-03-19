@@ -28,10 +28,12 @@ type Smtc struct {
 	playbackInfoChangedToken    foundation.EventRegistrationToken
 
 	// Current state (for change detection and deduplication)
-	currentArtist        string
-	currentTitle         string
-	currentStatus        int
-	currentThumbnailSize uint64
+	currentArtist               string
+	currentTitle                string
+	currentStatus               int
+	currentThumbnailSize        uint64
+	currentThumbnailContentType string
+	currentThumbnailData        []byte
 
 	// Progress tracking
 	currentPosition int

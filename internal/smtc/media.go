@@ -40,14 +40,19 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	// Store properties for thumbnail access.
 	s.currentProperties = props
 
-	// Only fire callback if artist or title actually changed.
-	if escapedArtist == s.currentArtist && escapedTitle == s.currentTitle {
+	// Always read thumbnail — it may have changed independently of artist/title.
+	contentType, thumbData := s.readThumbnail()
+
+	// Only fire callback if artist, title, or thumbnail actually changed.
+	artistChanged := escapedArtist != s.currentArtist || escapedTitle != s.currentTitle
+	// readThumbnail returns stored data on dedup hit, so compare by length as a proxy.
+	thumbChanged := len(thumbData) != len(s.currentThumbnailData)
+	if !artistChanged && !thumbChanged {
 		return
 	}
 	s.currentArtist = escapedArtist
 	s.currentTitle = escapedTitle
 
-	contentType, thumbData := s.readThumbnail()
 	if s.opts.OnInfo != nil {
 		s.opts.OnInfo(InfoData{
 			Artist:               s.currentArtist,
