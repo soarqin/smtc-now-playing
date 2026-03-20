@@ -35,10 +35,12 @@ jobs:
           $changelogPath = "CHANGELOG.md"
           $content = Get-Content $changelogPath -Raw
           
-          # Extract section for this version
+          # Extract section for this version using Singleline flag for dotall mode
           $pattern = "## \[$version\].*?(?=## \[|$)"
-          if ($content -match $pattern) {
-            $section = $matches[0].Trim()
+          $match = [System.Text.RegularExpressions.Regex]::Match($content, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+          
+          if ($match.Success) {
+            $section = $match.Value.Trim()
             # Remove the version header line to get just the content
             $section = $section -replace "## \[$version\].*?\n", ""
             $section = $section.Trim()
