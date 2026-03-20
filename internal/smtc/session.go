@@ -93,7 +93,10 @@ func (s *Smtc) subscribeSessionsChanged() {
 		_ unsafe.Pointer,
 		_ unsafe.Pointer,
 	) {
-		s.enumerateSessions()
+		select {
+		case s.cmdChan <- func() { s.enumerateSessions() }:
+		default:
+		}
 	})
 	token, _ := s.sessionManager.AddSessionsChanged(handler)
 	s.sessionsChangedToken = token
@@ -259,7 +262,10 @@ func (s *Smtc) subscribePropertyEvents() {
 		_ unsafe.Pointer,
 		_ unsafe.Pointer,
 	) {
-		s.handleMediaPropertiesChanged()
+		select {
+		case s.cmdChan <- func() { s.handleMediaPropertiesChanged() }:
+		default:
+		}
 	})
 	token, _ := s.currentSession.AddMediaPropertiesChanged(mediaHandler)
 	s.mediaPropertiesChangedToken = token
@@ -271,7 +277,10 @@ func (s *Smtc) subscribePropertyEvents() {
 		_ unsafe.Pointer,
 		_ unsafe.Pointer,
 	) {
-		s.handlePlaybackInfoChanged()
+		select {
+		case s.cmdChan <- func() { s.handlePlaybackInfoChanged() }:
+		default:
+		}
 	})
 	token, _ = s.currentSession.AddPlaybackInfoChanged(playbackHandler)
 	s.playbackInfoChangedToken = token

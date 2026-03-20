@@ -40,13 +40,20 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	// Store properties for thumbnail access.
 	s.currentProperties = props
 
-	// Always read thumbnail — it may have changed independently of artist/title.
-	contentType, thumbData := s.readThumbnail()
-
 	// Only fire callback if artist, title, or thumbnail actually changed.
 	artistChanged := escapedArtist != s.currentArtist || escapedTitle != s.currentTitle
+	// Reset dedup state when song changes so readThumbnail always does a fresh read.
+	if artistChanged {
+		s.currentThumbnailSize = 0
+		s.currentThumbnailData = nil
+		s.currentThumbnailContentType = ""
+	}
+	// Snapshot BEFORE readThumbnail() mutates s.currentThumbnailData.
+	oldThumbLen := len(s.currentThumbnailData)
+	// Always read thumbnail — it may have changed independently of artist/title.
+	contentType, thumbData := s.readThumbnail()
 	// readThumbnail returns stored data on dedup hit, so compare by length as a proxy.
-	thumbChanged := len(thumbData) != len(s.currentThumbnailData)
+	thumbChanged := len(thumbData) != oldThumbLen
 	if !artistChanged && !thumbChanged {
 		return
 	}
@@ -73,6 +80,9 @@ func (s *Smtc) clearMediaInfo() {
 	s.currentArtist = ""
 	s.currentTitle = ""
 	s.currentProperties = nil
+	s.currentThumbnailSize = 0
+	s.currentThumbnailData = nil
+	s.currentThumbnailContentType = ""
 	if s.opts.OnInfo != nil {
 		s.opts.OnInfo(InfoData{})
 	}
