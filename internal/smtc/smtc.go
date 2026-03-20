@@ -53,9 +53,10 @@ type Smtc struct {
 // New creates a new Smtc instance with the given options
 func New(opts Options) *Smtc {
 	return &Smtc{
-		opts:     opts,
-		quitChan: make(chan struct{}),
-		cmdChan:  make(chan func(), 8),
+		opts:          opts,
+		quitChan:      make(chan struct{}),
+		cmdChan:       make(chan func(), 8),
+		selectedAppID: opts.InitialDevice,
 	}
 }
 

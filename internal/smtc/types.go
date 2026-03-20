@@ -43,6 +43,7 @@ type Options struct {
 	OnProgress             ProgressCallback
 	OnSessionsChanged      func([]SessionInfo)
 	OnSelectedDeviceChange func(string)
+	InitialDevice          string
 }
 
 // escape replicates C++ escape() — escapes special characters in artist/title strings

@@ -28,6 +28,12 @@ type WebServer struct {
 	wsConnectionsMutex  sync.Mutex
 	albumArtContentType string
 	albumArtData        []byte
+
+	// Device selection
+	sessionsMutex          sync.Mutex
+	sessions               []smtc.SessionInfo
+	onSessionsChanged      func()
+	onSelectedDeviceChange func(string)
 }
 
 type infoDetail struct {
@@ -42,7 +48,7 @@ type progressDetail struct {
 	Status   int `json:"status"`
 }
 
-func New(host string, port string, theme string) *WebServer {
+func New(host string, port string, theme string, selectedDevice string) *WebServer {
 	mux := http.NewServeMux()
 	srv := &WebServer{
 		httpSrv: &http.Server{
@@ -60,6 +66,20 @@ func New(host string, port string, theme string) *WebServer {
 		OnProgress: func(data smtc.ProgressData) {
 			srv.handleProgressUpdate(data)
 		},
+		OnSessionsChanged: func(sessions []smtc.SessionInfo) {
+			srv.sessionsMutex.Lock()
+			srv.sessions = sessions
+			srv.sessionsMutex.Unlock()
+			if srv.onSessionsChanged != nil {
+				srv.onSessionsChanged()
+			}
+		},
+		OnSelectedDeviceChange: func(appID string) {
+			if srv.onSelectedDeviceChange != nil {
+				srv.onSelectedDeviceChange(appID)
+			}
+		},
+		InitialDevice: selectedDevice,
 	})
 
 	mux.HandleFunc("/ws", srv.handleWebSocket)
@@ -255,4 +275,31 @@ func (srv *WebServer) Error() <-chan error {
 
 func (srv *WebServer) SetTheme(theme string) {
 	srv.currentTheme = theme
+}
+
+// GetSessions returns a copy of the current list of available SMTC sessions.
+func (srv *WebServer) GetSessions() []smtc.SessionInfo {
+	srv.sessionsMutex.Lock()
+	defer srv.sessionsMutex.Unlock()
+	if len(srv.sessions) == 0 {
+		return nil
+	}
+	result := make([]smtc.SessionInfo, len(srv.sessions))
+	copy(result, srv.sessions)
+	return result
+}
+
+// SelectDevice selects the SMTC session identified by appID for monitoring.
+func (srv *WebServer) SelectDevice(appID string) {
+	srv.smtc.SelectDevice(appID)
+}
+
+// SetOnSessionsChanged sets the callback invoked when the session list changes.
+func (srv *WebServer) SetOnSessionsChanged(callback func()) {
+	srv.onSessionsChanged = callback
+}
+
+// SetOnSelectedDeviceChange sets the callback invoked when the monitored device changes.
+func (srv *WebServer) SetOnSelectedDeviceChange(callback func(string)) {
+	srv.onSelectedDeviceChange = callback
 }
