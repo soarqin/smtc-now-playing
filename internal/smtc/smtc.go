@@ -16,14 +16,20 @@ import (
 type Smtc struct {
 	opts     Options
 	quitChan chan struct{}
-	mu       sync.Mutex // protects currentStatus, currentPosition, currentDuration, currentArtist, currentTitle, currentThumbnailSize, currentProperties
+	cmdChan  chan func()
+	mu       sync.Mutex // protects sessions, sessionObjects, currentStatus, currentPosition, currentDuration, currentArtist, currentTitle, currentThumbnailSize, currentProperties
 
 	// Session management
 	sessionManager *control.GlobalSystemMediaTransportControlsSessionManager
 	currentSession *control.GlobalSystemMediaTransportControlsSession
 
+	// Multi-session state
+	sessions       []SessionInfo
+	sessionObjects []*control.GlobalSystemMediaTransportControlsSession
+	selectedAppID  string
+
 	// Event tokens for cleanup
-	sessionChangedToken         foundation.EventRegistrationToken
+	sessionsChangedToken        foundation.EventRegistrationToken
 	mediaPropertiesChangedToken foundation.EventRegistrationToken
 	playbackInfoChangedToken    foundation.EventRegistrationToken
 
@@ -49,6 +55,7 @@ func New(opts Options) *Smtc {
 	return &Smtc{
 		opts:     opts,
 		quitChan: make(chan struct{}),
+		cmdChan:  make(chan func(), 8),
 	}
 }
 
@@ -72,16 +79,10 @@ func (s *Smtc) Start() error {
 			return
 		}
 
-		// If there is an initial session, read its media properties immediately
-		// so the caller gets the current track on startup without waiting for an event.
-		if s.currentSession != nil {
-			s.handleMediaPropertiesChanged()
-		}
-
 		s.startProgressTimer()
 		defer s.stopProgressTimer()
 
-		// Event loop: drive the progress ticker and respond to quit signal.
+		// Event loop: drive the progress ticker, handle commands, and respond to quit signal.
 		for {
 			select {
 			case <-s.quitChan:
@@ -90,9 +91,11 @@ func (s *Smtc) Start() error {
 					s.unsubscribePropertyEvents()
 				}
 				if s.sessionManager != nil {
-					_ = s.sessionManager.RemoveCurrentSessionChanged(s.sessionChangedToken)
+					_ = s.sessionManager.RemoveSessionsChanged(s.sessionsChangedToken)
 				}
 				return
+			case cmd := <-s.cmdChan:
+				cmd()
 			case <-s.progressTicker.C:
 				s.readTimelineAndProgress()
 			}
@@ -104,4 +107,23 @@ func (s *Smtc) Start() error {
 // Stop stops monitoring SMTC by signalling the dedicated goroutine to exit.
 func (s *Smtc) Stop() {
 	close(s.quitChan)
+}
+
+// SelectDevice selects the SMTC session identified by appID for monitoring.
+// Safe to call from any goroutine; the actual selection runs on the SMTC goroutine via cmdChan.
+func (s *Smtc) SelectDevice(appID string) {
+	s.cmdChan <- func() { s.selectDevice(appID) }
+}
+
+// GetSessions returns a copy of the current list of available SMTC sessions.
+// Safe to call from any goroutine.
+func (s *Smtc) GetSessions() []SessionInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.sessions) == 0 {
+		return nil
+	}
+	result := make([]SessionInfo, len(s.sessions))
+	copy(result, s.sessions)
+	return result
 }
