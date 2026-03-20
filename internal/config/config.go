@@ -13,6 +13,7 @@ type Config struct {
 	StartMinimized     bool   `json:"startminimized"`
 	ShowPreviewWindow  bool   `json:"showpreviewwindow"`
 	PreviewAlwaysOnTop bool   `json:"previewalwaysontop"`
+	SelectedDevice     string `json:"selecteddevice"`
 }
 
 var config *Config

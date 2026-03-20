@@ -31,10 +31,18 @@ type InfoCallback func(InfoData)
 // ProgressCallback is called when playback progress changes
 type ProgressCallback func(ProgressData)
 
+// SessionInfo holds metadata about an available SMTC session
+type SessionInfo struct {
+	AppID string
+	Name  string
+}
+
 // Options configures the Smtc instance
 type Options struct {
-	OnInfo     InfoCallback
-	OnProgress ProgressCallback
+	OnInfo                 InfoCallback
+	OnProgress             ProgressCallback
+	OnSessionsChanged      func([]SessionInfo)
+	OnSelectedDeviceChange func(string)
 }
 
 // escape replicates C++ escape() — escapes special characters in artist/title strings

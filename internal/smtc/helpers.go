@@ -3,6 +3,7 @@
 package smtc
 
 import (
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -84,4 +85,28 @@ func waitForAsync(op *foundation.IAsyncOperation, handlerIID *ole.GUID) (unsafe.
 		return result, status
 	}
 	return nil, status
+}
+
+// friendlyAppName extracts a user-friendly application name from an appUserModelId.
+// For UWP apps (format: "PackageFamilyName!AppId"), extracts the part after the last "!".
+// For Win32 apps (format: "app.exe"), strips the ".exe" suffix (case-insensitive).
+// Returns the result with the first letter uppercased, or the original input if empty.
+func friendlyAppName(appUserModelId string) string {
+	name := appUserModelId
+	// UWP apps: extract part after last "!"
+	if idx := strings.LastIndex(name, "!"); idx >= 0 {
+		name = name[idx+1:]
+	} else if strings.HasSuffix(strings.ToLower(name), ".exe") {
+		// Win32 apps: strip ".exe" suffix (case-insensitive)
+		name = name[:len(name)-4]
+	}
+	// Title-case: uppercase first letter
+	if len(name) > 0 {
+		name = strings.ToUpper(name[:1]) + name[1:]
+	}
+	// Fallback: if result is empty, return original
+	if name == "" {
+		return appUserModelId
+	}
+	return name
 }
