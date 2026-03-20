@@ -25,6 +25,7 @@ type Gui struct {
 	portUd               *ui.UpDown
 	lblTheme             *ui.Static
 	themeCombo           *ui.ComboBox
+	deviceCombo          *ui.ComboBox
 	btnStart             *ui.Button
 	cbAutoStart          *ui.CheckBox
 	cbStartMinimized     *ui.CheckBox
@@ -43,6 +44,10 @@ const (
 	SYSTRAY_MENU_SHOW_HIDE  = 1001
 	SYSTRAY_MENU_START_STOP = 1002
 	SYSTRAY_MENU_EXIT       = 1003
+
+	WM_SESSIONS_CHANGED        = co.WM_APP + 2
+	WM_SELECTED_DEVICE_CHANGED = co.WM_APP + 3
+	SYSTRAY_MENU_DEVICE_BASE   = 2001 // device menu items start at 2001
 )
 
 func New(version string) *Gui {
@@ -55,7 +60,7 @@ func New(version string) *Gui {
 	wnd := ui.NewMain(
 		optsMain.
 			Title("SMTC Now Playing v" + version).
-			Size(ui.Dpi(370, 260)).
+			Size(ui.Dpi(370, 285)).
 			ClassIconId(0),
 	)
 
@@ -91,6 +96,18 @@ func New(version string) *Gui {
 			Position(ui.Dpi(180, 20)).
 			Width(ui.DpiX(80)),
 	)
+	ui.NewStatic(
+		wnd,
+		ui.OptsStatic().
+			Text("Device").
+			Position(ui.Dpi(10, 47)),
+	)
+	deviceCombo := ui.NewComboBox(
+		wnd,
+		ui.OptsComboBox().
+			Position(ui.Dpi(60, 45)).
+			Width(ui.DpiX(300)),
+	)
 	btnStart := ui.NewButton(
 		wnd,
 		ui.OptsButton().
@@ -101,39 +118,39 @@ func New(version string) *Gui {
 		wnd,
 		ui.OptsCheckBox().
 			Text("Auto start server").
-			Position(ui.Dpi(10, 50)),
+			Position(ui.Dpi(10, 75)),
 	)
 	cbStartMinimized := ui.NewCheckBox(
 		wnd,
 		ui.OptsCheckBox().
 			Text("Start minimized").
-			Position(ui.Dpi(10, 70)),
+			Position(ui.Dpi(10, 95)),
 	)
 	cbShowPreviewWindow := ui.NewCheckBox(
 		wnd,
 		ui.OptsCheckBox().
 			Text("Show preview").
-			Position(ui.Dpi(10, 90)),
+			Position(ui.Dpi(10, 115)),
 	)
 	cbPreviewAlwaysOnTop := ui.NewCheckBox(
 		wnd,
 		ui.OptsCheckBox().
 			Text("Preview always on top").
-			Position(ui.Dpi(10, 110)),
+			Position(ui.Dpi(10, 135)),
 	)
 	urlText := ui.NewEdit(
 		wnd,
 		ui.OptsEdit().
 			CtrlStyle(co.ES_AUTOHSCROLL|co.ES_READONLY|co.ES_MULTILINE|co.ES_AUTOVSCROLL|co.ES(co.WS_VSCROLL)).
 			Text("").
-			Position(ui.Dpi(10, 140)).
+			Position(ui.Dpi(10, 165)).
 			Width(ui.DpiX(350)).
 			Height(ui.DpiY(100)),
 	)
 
 	me := &Gui{
 		wnd: wnd, lblPort: lblPort, portEdit: portEdit, portUd: ud,
-		lblTheme: lblTheme, themeCombo: themeCombo, btnStart: btnStart,
+		lblTheme: lblTheme, themeCombo: themeCombo, deviceCombo: deviceCombo, btnStart: btnStart,
 		cbAutoStart: cbAutoStart, cbStartMinimized: cbStartMinimized,
 		cbShowPreviewWindow: cbShowPreviewWindow, cbPreviewAlwaysOnTop: cbPreviewAlwaysOnTop,
 		infoText: urlText,
@@ -259,12 +276,55 @@ func (me *Gui) events() {
 			mii.SetCbSize()
 			popup.InsertMenuItemByPos(1, mii)
 
+			nextPos := 2
+			if me.srv != nil {
+				sessions := me.srv.GetSessions()
+				if len(sessions) > 0 {
+					deviceMenu, dErr := win.CreatePopupMenu()
+					if dErr == nil {
+						currentDevice := config.Get().SelectedDevice
+						for i, sess := range sessions {
+							itemState := co.MFS_UNCHECKED
+							if sess.AppID == currentDevice || (currentDevice == "" && i == 0) {
+								itemState = co.MFS_CHECKED
+							}
+							itemPtr, iErr := syscall.UTF16PtrFromString(sess.Name)
+							if iErr != nil {
+								continue
+							}
+							dmi := &win.MENUITEMINFO{
+								FMask:      co.MIIM_STRING | co.MIIM_ID | co.MIIM_STATE | co.MIIM_FTYPE,
+								FType:      co.MFT_STRING | co.MFT_RADIOCHECK,
+								FState:     itemState,
+								WId:        uint32(SYSTRAY_MENU_DEVICE_BASE + i),
+								DwTypeData: itemPtr,
+							}
+							dmi.SetCbSize()
+							deviceMenu.InsertMenuItemByPos(i, dmi)
+						}
+						subLabelPtr, sErr := syscall.UTF16PtrFromString("&Device")
+						if sErr == nil {
+							dmi := &win.MENUITEMINFO{
+								FMask:      co.MIIM_STRING | co.MIIM_SUBMENU,
+								FType:      co.MFT_STRING,
+								HSubMenu:   deviceMenu,
+								DwTypeData: subLabelPtr,
+							}
+							dmi.SetCbSize()
+							popup.InsertMenuItemByPos(nextPos, dmi)
+							nextPos++
+						}
+					}
+				}
+			}
+
 			mii = &win.MENUITEMINFO{
 				FMask: co.MIIM_FTYPE,
 				FType: co.MFT_SEPARATOR,
 			}
 			mii.SetCbSize()
-			popup.InsertMenuItemByPos(2, mii)
+			popup.InsertMenuItemByPos(nextPos, mii)
+			nextPos++
 
 			utf16Ptr, err = syscall.UTF16PtrFromString("E&xit")
 			if err != nil {
@@ -278,7 +338,7 @@ func (me *Gui) events() {
 				DwTypeData: utf16Ptr,
 			}
 			mii.SetCbSize()
-			popup.InsertMenuItemByPos(3, mii)
+			popup.InsertMenuItemByPos(nextPos, mii)
 
 			pos, err := win.GetCursorPos()
 			if err != nil {
@@ -310,6 +370,17 @@ func (me *Gui) events() {
 				}
 			case SYSTRAY_MENU_EXIT:
 				me.wnd.Hwnd().DestroyWindow()
+			default:
+				if res >= SYSTRAY_MENU_DEVICE_BASE && me.srv != nil {
+					idx := int(res) - SYSTRAY_MENU_DEVICE_BASE
+					sessions := me.srv.GetSessions()
+					if idx >= 0 && idx < len(sessions) {
+						appID := sessions[idx].AppID
+						me.srv.SelectDevice(appID)
+						config.Get().SelectedDevice = appID
+						config.Save()
+					}
+				}
 			}
 
 			popup.DestroyMenu()
@@ -335,6 +406,20 @@ func (me *Gui) events() {
 		if me.srv != nil {
 			me.srv.SetTheme(me.themeCombo.CurrentText())
 			config.Get().Theme = me.themeCombo.CurrentText()
+			config.Save()
+		}
+	})
+
+	me.deviceCombo.On().CbnSelChange(func() {
+		if me.srv == nil {
+			return
+		}
+		idx := me.deviceCombo.SelectedIndex()
+		sessions := me.srv.GetSessions()
+		if idx >= 0 && idx < len(sessions) {
+			appID := sessions[idx].AppID
+			me.srv.SelectDevice(appID)
+			config.Get().SelectedDevice = appID
 			config.Save()
 		}
 	})
@@ -387,6 +472,40 @@ func (me *Gui) events() {
 		}
 		return 0
 	})
+
+	me.wnd.On().Wm(WM_SESSIONS_CHANGED, func(p ui.Wm) uintptr {
+		if me.srv == nil {
+			return 0
+		}
+		sessions := me.srv.GetSessions()
+		me.deviceCombo.DeleteAllItems()
+		selectedIdx := 0
+		for i, sess := range sessions {
+			me.deviceCombo.AddItem(sess.Name)
+			if sess.AppID == config.Get().SelectedDevice {
+				selectedIdx = i
+			}
+		}
+		if len(sessions) > 0 {
+			me.deviceCombo.SelectIndex(selectedIdx)
+		}
+		return 0
+	})
+
+	me.wnd.On().Wm(WM_SELECTED_DEVICE_CHANGED, func(p ui.Wm) uintptr {
+		if me.srv == nil {
+			return 0
+		}
+		sessions := me.srv.GetSessions()
+		selectedDevice := config.Get().SelectedDevice
+		for i, sess := range sessions {
+			if sess.AppID == selectedDevice {
+				me.deviceCombo.SelectIndex(i)
+				break
+			}
+		}
+		return 0
+	})
 }
 
 func (me *Gui) syncConfig() {
@@ -403,7 +522,15 @@ func (me *Gui) syncConfig() {
 
 func (me *Gui) startWebServer() {
 	me.btnStart.Hwnd().EnableWindow(false)
-	me.srv = server.New("0.0.0.0", me.portEdit.Text(), me.themeCombo.CurrentText())
+	me.srv = server.New("0.0.0.0", me.portEdit.Text(), me.themeCombo.CurrentText(), config.Get().SelectedDevice)
+	hwnd := me.wnd.Hwnd()
+	me.srv.SetOnSessionsChanged(func() {
+		hwnd.PostMessage(WM_SESSIONS_CHANGED, 0, 0)
+	})
+	me.srv.SetOnSelectedDeviceChange(func(appID string) {
+		config.Get().SelectedDevice = appID
+		hwnd.PostMessage(WM_SELECTED_DEVICE_CHANGED, 0, 0)
+	})
 	srvErrChan := me.srv.Error()
 	go func() {
 		for err := range srvErrChan {
