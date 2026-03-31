@@ -87,6 +87,57 @@ func waitForAsync(op *foundation.IAsyncOperation, handlerIID *ole.GUID) (unsafe.
 	return nil, status
 }
 
+// readNullableBool safely reads a nullable WinRT bool reference.
+// Returns false, false if ref is nil (not present).
+// Returns value, true if present and successfully read.
+func readNullableBool(ref *foundation.IReference) (bool, bool) {
+	if ref == nil {
+		return false, false
+	}
+	ptr, err := ref.GetValue()
+	if err != nil {
+		return false, false
+	}
+	// IReference<Boolean>.GetValue() stores the bool in the pointer itself.
+	// Reinterpret the storage as bool.
+	val := *(*bool)(unsafe.Pointer(&ptr))
+	return val, true
+}
+
+// readNullableFloat64 safely reads a nullable WinRT float64 reference.
+// Returns 0.0, false if ref is nil (not present).
+// Returns value, true if present and successfully read.
+func readNullableFloat64(ref *foundation.IReference) (float64, bool) {
+	if ref == nil {
+		return 0.0, false
+	}
+	ptr, err := ref.GetValue()
+	if err != nil {
+		return 0.0, false
+	}
+	// IReference<Double>.GetValue() stores the float64 bits in the pointer itself.
+	// Reinterpret the storage as float64.
+	val := *(*float64)(unsafe.Pointer(&ptr))
+	return val, true
+}
+
+// readNullableInt32 safely reads a nullable WinRT int32 reference.
+// Returns 0, false if ref is nil (not present).
+// Returns value, true if present and successfully read.
+func readNullableInt32(ref *foundation.IReference) (int32, bool) {
+	if ref == nil {
+		return 0, false
+	}
+	ptr, err := ref.GetValue()
+	if err != nil {
+		return 0, false
+	}
+	// IReference<Int32>.GetValue() stores the int32 in the pointer itself.
+	// Reinterpret the storage as int32.
+	val := *(*int32)(unsafe.Pointer(&ptr))
+	return val, true
+}
+
 // friendlyAppName extracts a user-friendly application name from an appUserModelId.
 // For UWP apps (format: "PackageFamilyName!AppId"), extracts the part after the last "!".
 // For Win32 apps (format: "app.exe"), strips the ".exe" suffix (case-insensitive).
