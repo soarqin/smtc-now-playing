@@ -28,23 +28,14 @@ func init() {
 type ControlAction int
 
 const (
-	// ControlPlay requests playback to start.
 	ControlPlay ControlAction = iota
-	// ControlPause requests playback to pause.
 	ControlPause
-	// ControlStop requests playback to stop.
 	ControlStop
-	// ControlTogglePlayPause toggles between play and pause.
 	ControlTogglePlayPause
-	// ControlSkipNext skips to the next track.
 	ControlSkipNext
-	// ControlSkipPrevious skips to the previous track.
 	ControlSkipPrevious
-	// ControlSeek requests a playback position change (uses seekPosition field).
 	ControlSeek
-	// ControlShuffle requests a shuffle state change (uses shuffleActive field).
 	ControlShuffle
-	// ControlRepeat requests a repeat mode change (uses repeatMode field).
 	ControlRepeat
 )
 

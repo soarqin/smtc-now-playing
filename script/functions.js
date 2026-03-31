@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Determine WebSocket URL based on current protocol
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = protocol + '//' + window.location.host + '/ws'
-    const infoChangedEvt = addWebSocket(wsUrl, function (event) {
+    addWebSocket(wsUrl, function (event) {
         const data = JSON.parse(event.data)
         switch (data.type) {
             case 'info': {

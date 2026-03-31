@@ -72,4 +72,3 @@ func TestAddress(t *testing.T) {
 		t.Errorf("Address: got %q, want \"localhost:9999\"", addr)
 	}
 }
-

@@ -109,32 +109,26 @@ func (srv *WebServer) handleControl(w http.ResponseWriter, r *http.Request, acti
 	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 }
 
-// handleControlPlay handles POST /api/control/play.
 func (srv *WebServer) handleControlPlay(w http.ResponseWriter, r *http.Request) {
 	srv.handleControl(w, r, srv.smtc.Play)
 }
 
-// handleControlPause handles POST /api/control/pause.
 func (srv *WebServer) handleControlPause(w http.ResponseWriter, r *http.Request) {
 	srv.handleControl(w, r, srv.smtc.Pause)
 }
 
-// handleControlStop handles POST /api/control/stop.
 func (srv *WebServer) handleControlStop(w http.ResponseWriter, r *http.Request) {
 	srv.handleControl(w, r, srv.smtc.StopPlayback)
 }
 
-// handleControlToggle handles POST /api/control/toggle (toggle play/pause).
 func (srv *WebServer) handleControlToggle(w http.ResponseWriter, r *http.Request) {
 	srv.handleControl(w, r, srv.smtc.TogglePlayPause)
 }
 
-// handleControlNext handles POST /api/control/next.
 func (srv *WebServer) handleControlNext(w http.ResponseWriter, r *http.Request) {
 	srv.handleControl(w, r, srv.smtc.SkipNext)
 }
 
-// handleControlPrevious handles POST /api/control/previous.
 func (srv *WebServer) handleControlPrevious(w http.ResponseWriter, r *http.Request) {
 	srv.handleControl(w, r, srv.smtc.SkipPrevious)
 }

@@ -107,7 +107,7 @@ func TestHandleDevices_WithSessions_200(t *testing.T) {
 
 	srv.sessionsMutex.Lock()
 	srv.sessions = []smtc.SessionInfo{
-		{AppID: "com.example.player", Name: "Example Player", SourceAppId: "example"},
+		{AppID: "com.example.player", Name: "Example Player", SourceAppID: "example"},
 	}
 	srv.sessionsMutex.Unlock()
 

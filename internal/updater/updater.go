@@ -4,12 +4,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // DefaultAPIURL is the GitHub releases API endpoint for this project.
 const DefaultAPIURL = "https://api.github.com/repos/soarqin/smtc-now-playing/releases/latest"
+
+// compareVersions returns true if 'a' is newer than 'b'.
+// Assumes format "X.Y.Z" with no leading 'v'.
+func compareVersions(a, b string) bool {
+	aParts := strings.SplitN(a, ".", 3)
+	bParts := strings.SplitN(b, ".", 3)
+	for i := 0; i < 3; i++ {
+		ai, _ := strconv.Atoi(aParts[i])
+		bi, _ := strconv.Atoi(bParts[i])
+		if ai != bi {
+			return ai > bi
+		}
+	}
+	return false // equal
+}
 
 // UpdateInfo holds information about an available update.
 type UpdateInfo struct {
@@ -48,12 +64,11 @@ func checkForUpdate(currentVersion, apiURL string, client *http.Client) (*Update
 	}
 
 	// Normalize versions: strip leading "v" for comparison.
-	// Simple string comparison works for semver x.y.z as long as components are single digits.
 	latest := strings.TrimPrefix(release.TagName, "v")
 	current := strings.TrimPrefix(currentVersion, "v")
 
 	return &UpdateInfo{
-		Available:    latest > current,
+		Available:    compareVersions(latest, current),
 		Version:      release.TagName,
 		URL:          release.HTMLURL,
 		ReleaseNotes: release.Body,
