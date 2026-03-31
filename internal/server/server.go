@@ -86,6 +86,10 @@ func New(host string, port string, theme string, selectedDevice string) *WebServ
 	mux.HandleFunc("/ws", srv.handleWebSocket)
 	mux.HandleFunc("/albumArt/", srv.handleAlbumArt)
 	mux.HandleFunc("/script/", srv.handleScript)
+	mux.HandleFunc("GET /api/now-playing", srv.handleNowPlaying)
+	mux.HandleFunc("GET /api/devices", srv.handleDevices)
+	mux.HandleFunc("GET /api/sessions", srv.handleDevices)
+	mux.HandleFunc("GET /api/capabilities", srv.handleCapabilities)
 	mux.HandleFunc("/", srv.handleStatic)
 
 	return srv
