@@ -49,22 +49,151 @@ function addWebSocket(wsUrl, onmessage) {
 document.addEventListener('DOMContentLoaded', function () {
     setElementWidthsFromGETArgs();
     window.onLoaded();
+
+    // Parse hideDelay URL param: ms of grace period before idle class (default 5000)
+    var params = new URLSearchParams(window.location.search);
+    var hideDelay = parseInt(params.get('hideDelay') || '5000', 10);
+
+    // Playback state for client-side position interpolation
+    var playbackState = {
+        position: 0,
+        duration: 0,
+        lastUpdatedTime: 0,
+        playbackRate: 0,
+        status: 0
+    };
+    var rafId = null;
+    var idleTimer = null;
+
+    // Current track info for song-change transition detection
+    var currentTitle = null;
+    var currentArtist = null;
+
+    // Apply a single status CSS class to the root <html> element
+    function setStatusClass(className) {
+        document.documentElement.classList.remove('playing', 'paused', 'stopped', 'idle');
+        document.documentElement.classList.add(className);
+    }
+
+    // Start requestAnimationFrame loop for smooth progress bar interpolation
+    function startAnimationLoop() {
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+        }
+        function animationLoop() {
+            if (playbackState.playbackRate > 0 && playbackState.status === 4) {
+                var elapsed = (Date.now() - playbackState.lastUpdatedTime) * playbackState.playbackRate / 1000;
+                var currentPos = Math.min(playbackState.position + elapsed, playbackState.duration);
+                if (typeof window.setProgress === 'function') {
+                    window.setProgress(currentPos, playbackState.duration);
+                }
+            }
+            rafId = requestAnimationFrame(animationLoop);
+        }
+        rafId = requestAnimationFrame(animationLoop);
+    }
+
+    // Stop the requestAnimationFrame loop
+    function stopAnimationLoop() {
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+    }
+
     // Determine WebSocket URL based on current protocol
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = protocol + '//' + window.location.host + '/ws'
     const infoChangedEvt = addWebSocket(wsUrl, function (event) {
         const data = JSON.parse(event.data)
         switch (data.type) {
-            case 'info':
-                window.setTrackInfo(data.data.title, data.data.artist)
-                window.setAlbumArt(data.data.albumArt)
-                break
-            case 'progress':
-                window.setProgress(data.data.position, data.data.duration)
+            case 'info': {
+                var title = data.data.title;
+                var artist = data.data.artist;
+                var albumArt = data.data.albumArt;
+
+                var isFirstTrack = (currentTitle === null && currentArtist === null);
+                var isSameTrack = (title === currentTitle && artist === currentArtist);
+
+                if (isFirstTrack || isSameTrack) {
+                    // First track or same track: update immediately without transition
+                    window.setTrackInfo(title, artist);
+                    window.setAlbumArt(albumArt);
+                } else {
+                    // Song changed: add transitioning class, delay DOM update for CSS fade-out
+                    document.documentElement.classList.add('transitioning');
+                    // Capture values for the closure
+                    var pendingTitle = title;
+                    var pendingArtist = artist;
+                    var pendingAlbumArt = albumArt;
+                    setTimeout(function () {
+                        window.setTrackInfo(pendingTitle, pendingArtist);
+                        window.setAlbumArt(pendingAlbumArt);
+                        document.documentElement.classList.remove('transitioning');
+                    }, 300);
+                }
+
+                // Update current track state immediately
+                currentTitle = title;
+                currentArtist = artist;
+                break;
+            }
+            case 'progress': {
+                var pos = data.data.position;
+                var dur = data.data.duration;
                 var status = data.data.status;
-                if (status !== undefined)
-                    window.setPlayingStatus(data.data.status)
-                break
+                var lastUpdatedTime = data.data.lastUpdatedTime || 0;
+                var playbackRate = data.data.playbackRate || 0;
+
+                // Update interpolation state
+                playbackState.position = pos;
+                playbackState.duration = dur;
+                playbackState.lastUpdatedTime = lastUpdatedTime;
+                playbackState.playbackRate = playbackRate;
+
+                if (status !== undefined) {
+                    playbackState.status = status;
+                    window.setPlayingStatus(status);
+
+                    // Update status CSS class and manage idle grace-period timer
+                    if (status === 4) {
+                        // Playing: cancel idle timer, apply playing class
+                        if (idleTimer !== null) {
+                            clearTimeout(idleTimer);
+                            idleTimer = null;
+                        }
+                        setStatusClass('playing');
+                    } else if (status === 5) {
+                        // Paused: cancel idle timer, apply paused class
+                        if (idleTimer !== null) {
+                            clearTimeout(idleTimer);
+                            idleTimer = null;
+                        }
+                        setStatusClass('paused');
+                    } else {
+                        // Stopped/Closed/Opened/Changing (0-3): apply stopped,
+                        // then schedule idle class after grace period
+                        setStatusClass('stopped');
+                        if (idleTimer !== null) {
+                            clearTimeout(idleTimer);
+                        }
+                        idleTimer = setTimeout(function () {
+                            setStatusClass('idle');
+                            idleTimer = null;
+                        }, hideDelay);
+                    }
+                }
+
+                // Use rAF interpolation when playing with a valid server timestamp;
+                // otherwise call setProgress directly (fallback for old servers or non-playing states)
+                if (status === 4 && lastUpdatedTime > 0) {
+                    startAnimationLoop();
+                } else {
+                    stopAnimationLoop();
+                    window.setProgress(pos, dur);
+                }
+                break;
+            }
             case 'reload':
                 location.reload()
                 break
