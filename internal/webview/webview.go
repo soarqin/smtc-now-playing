@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded',function(){
 func New(opts Options) *Preview {
 	width, height := ui.Dpi(600, 400)
 	var webViewOptions = webview2.WebViewOptions{
-		Debug:     true,
+		Debug:     false,
 		AutoFocus: true,
 		WindowOptions: webview2.WindowOptions{
 			Title:           "SMTC Now Playing",
