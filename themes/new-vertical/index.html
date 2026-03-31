@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-  <title>正在播放 - 音乐卡片</title>
+  <title>Now Playing - Music Card</title>
   <style>
     :root {
       --primary-color: #6c5ce7;
@@ -105,19 +105,19 @@
       50% { height: var(--max-height); }
       100% { height: 10%; }
     }
-    .song-info { 
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start; /* 修改：左对齐，以便从左向左滚动 */
-      overflow: hidden; /* 修改：切除超出边界的部分（包含Padding空间） */
-      text-align: left; /* 确保文字内容也是左对齐 */
-    }
-    .scrolling-text {
-      display: block; /* 修改为 block 以占满父容器宽度 */
-      white-space: nowrap;
-      width: 100%; /* 确保宽度撑满，便于计算 */
-    }
+     .song-info { 
+       width: 100%;
+       display: flex;
+       flex-direction: column;
+       align-items: flex-start; /* Modified: Left-align for left-to-left scrolling */
+       overflow: hidden; /* Modified: Clip overflow (including padding space) */
+       text-align: left; /* Ensure text content is also left-aligned */
+     }
+     .scrolling-text {
+       display: block; /* Modified to block to fill parent width */
+       white-space: nowrap;
+       width: 100%; /* Ensure full width for calculation */
+     }
     .song-title { 
       font-size: 1.5rem; 
       font-weight: 700; 
@@ -141,7 +141,7 @@
     .scrolling:hover {
       animation-play-state: paused;
     }
-    /* --- 进度条区域 --- */
+     /* --- Progress bar area --- */
     .progress-area { width: 100%; display: flex; flex-direction: column; gap: 12px; }
     .progress-bar-bg {
       width: 100%; height: 6px; background: rgba(255, 255, 255, 0.2);
@@ -199,15 +199,15 @@
 </head>
 <body>
   <main class="player-card playing" id="root">
-    <figure class="album-art-wrapper">
-      <img src="https://picsum.photos/seed/musicvibes/400/400.jpg" alt="Album Cover" class="album-art" id="albumArt">
-      <div class="audio-visualizer" id="visualizer"></div>
-    </figure>
-    <div class="song-info">
-      <!-- 文字区域现在是左对齐 -->
-      <h1 class="song-title scrolling-text" id="trackName"></h1>
-      <p class="artist-name scrolling-text" id="artistName"></p>
-    </div>
+     <figure class="album-art-wrapper">
+       <img src="https://picsum.photos/seed/musicvibes/400/400.jpg" alt="Album Cover" class="album-art" id="albumArt">
+       <div class="audio-visualizer" id="visualizer"></div>
+     </figure>
+     <div class="song-info">
+       <!-- Text area is now left-aligned -->
+       <h1 class="song-title scrolling-text" id="trackName"></h1>
+       <p class="artist-name scrolling-text" id="artistName"></p>
+     </div>
     <div class="progress-area">
       <div class="progress-bar-bg" id="progressBarBg">
         <div class="progress-bar-fill" id="progress">
@@ -216,20 +216,20 @@
       </div>
       <div class="time-status-row">
         <span class="time-left" id="currentTime">0:00</span>
-        <div class="status-badge" id="statusBadge">
-          <span class="status-dot" id="statusDot"></span>
-          <span id="statusText">正在播放</span>
-        </div>
+         <div class="status-badge" id="statusBadge">
+           <span class="status-dot" id="statusDot"></span>
+           <span id="statusText">Now Playing</span>
+         </div>
         <span class="time-right" id="totalTime">4:03</span>
       </div>
     </div>
   </main>
   <script>
     window.onLoaded = function() {
-      const visualizer = document.getElementById('visualizer');
-      const barCount = 20; 
-      // --- 初始化波形 ---
-      function reinitVisulizer() {
+       const visualizer = document.getElementById('visualizer');
+       const barCount = 20; 
+       // --- Initialize waveform ---
+       function reinitVisulizer() {
         visualizer.replaceChildren();
         for (let i = 0; i < barCount; i++) {
           const bar = document.createElement('div');
@@ -246,53 +246,53 @@
       const trackNameEl = document.getElementById('trackName');
       const artistNameEl = document.getElementById('artistName');
       const albumArtEl = document.getElementById('albumArt');
-      let lastStatus = 0;
-      let lastTitle = '';
-      let lastArtist = '';
-      // 格式化时间
-      const formatTime = (seconds) => {
+       let lastStatus = 0;
+       let lastTitle = '';
+       let lastArtist = '';
+       // Format time
+       const formatTime = (seconds) => {
         const min = Math.floor(seconds / 60);
         const sec = Math.floor(seconds % 60);
         return `${min}:${sec < 10 ? '0' : ''}${sec}`;
       };
-      // --- 检测文本是否溢出并处理滚动 ---
-      function checkTextOverflow(element) {
-        const clientWidth = element.clientWidth;
-        const textWidth = element.scrollWidth;
-        // 如果文字宽度大于容器宽度
-        if (textWidth > clientWidth) {
-          element.classList.add('scrolling');
-          const distance = clientWidth - textWidth;
-          element.style.setProperty('--scroll-distance', `${distance}px`);
-        } else {
-          element.classList.remove('scrolling');
-          element.style.removeProperty('--scroll-distance');
-        }
-      }
-      // 初始检查
-      checkTextOverflow(trackNameEl);
-      checkTextOverflow(artistNameEl);
-      // 窗口大小改变时重新计算
-      window.addEventListener('resize', () => {
+       // --- Detect text overflow and handle scrolling ---
+       function checkTextOverflow(element) {
+         const clientWidth = element.clientWidth;
+         const textWidth = element.scrollWidth;
+         // If text width exceeds container width
+         if (textWidth > clientWidth) {
+           element.classList.add('scrolling');
+           const distance = clientWidth - textWidth;
+           element.style.setProperty('--scroll-distance', `${distance}px`);
+         } else {
+           element.classList.remove('scrolling');
+           element.style.removeProperty('--scroll-distance');
+         }
+       }
+       // Initial check
+       checkTextOverflow(trackNameEl);
+       checkTextOverflow(artistNameEl);
+       // Recalculate on window resize
+       window.addEventListener('resize', () => {
         checkTextOverflow(trackNameEl);
         checkTextOverflow(artistNameEl);
       });
-      // ==========================================
-      // --- 外部调用函数
-      // ==========================================
-      window.setAlbumArt = function(url) {
+       // ==========================================
+       // --- External callable functions
+       // ==========================================
+       window.setAlbumArt = function(url) {
         if (url)
           albumArtEl.src = url + '?v=' + Date.now();
         else
           albumArtEl.src = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs%3D';
       };
-      window.setTrackInfo = function(title, artist) {
-        if (lastTitle === title && lastArtist == artist)
-          return;
-        lastTitle = title;
-        lastArtist = artist;
-        trackNameEl.textContent = title || '未播放';
-        artistNameEl.textContent = artist || '未知艺术家';
+       window.setTrackInfo = function(title, artist) {
+         if (lastTitle === title && lastArtist == artist)
+           return;
+         lastTitle = title;
+         lastArtist = artist;
+         trackNameEl.textContent = title || 'Not Playing';
+         artistNameEl.textContent = artist || 'Unknown Artist';
         setTimeout(() => {
           reinitVisulizer();
           checkTextOverflow(trackNameEl);
@@ -307,24 +307,24 @@
         const root = document.documentElement;
         if (lastStatus === status)
           return;
-        switch (status) {
-          case 0:
-          case 1:
-          case 2:
-          case 3:
-            statusText.textContent = '已停止';
-            break;
-          case 4:
-            statusText.textContent = '正在播放';
-            break;
-          case 5:
-            statusText.textContent = '已暂停';
-            break;
-          default:
-            statusText.textContent = '未知状态';
-            break;
-        }
-        lastStatus = status;
+         switch (status) {
+           case 0:
+           case 1:
+           case 2:
+           case 3:
+             statusText.textContent = 'Stopped';
+             break;
+           case 4:
+             statusText.textContent = 'Now Playing';
+             break;
+           case 5:
+             statusText.textContent = 'Paused';
+             break;
+           default:
+             statusText.textContent = 'Unknown Status';
+             break;
+         }
+         lastStatus = status;
         if (status === 4) {
           playerCard.classList.add('playing');
           root.style.setProperty('--text-accent', '#81ecec');

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -143,10 +143,10 @@
         </div>
         <div class="track-info">
           <div class="text-wrapper">
-            <h2 id="trackName">未播放</h2>
+            <h2 id="trackName">Not Playing</h2>
           </div>
           <div class="text-wrapper">
-            <p id="artistName">未知艺术家</p>
+            <p id="artistName">Unknown Artist</p>
           </div>
         </div>
       </div>
@@ -155,7 +155,7 @@
       </div>
       <div class="time-info">
         <span id="currentTime"></span>
-        <span id="status">已停止</span>
+        <span id="status">Stopped</span>
         <span id="totalTime"></span>
       </div>
     </div>
@@ -190,9 +190,9 @@
       const totalTimeText = document.getElementById('totalTime');
       const statusText = document.getElementById('status');
       let lastStatus = 0
-      window.setTrackInfo = function updateTrackInfo(title, artist) {
-        trackNameEl.textContent = title || '未播放';
-        artistNameEl.textContent = artist || '未知艺术家';
+       window.setTrackInfo = function updateTrackInfo(title, artist) {
+         trackNameEl.textContent = title || 'Not Playing';
+         artistNameEl.textContent = artist || 'Unknown Artist';
         // Check for overflow after updating text
         setTimeout(() => {
           checkTextOverflow(trackNameEl);
@@ -240,23 +240,23 @@
         if (lastStatus === status)
           return;
         lastStatus = status;
-        switch (status) {
-          case 0:
-          case 1:
-          case 2:
-          case 3:
-            statusText.textContent = '已停止';
-            break;
-          case 4:
-            statusText.textContent = '正在播放';
-            break;
-          case 5:
-            statusText.textContent = '已暂停';
-            break;
-          default:
-            statusText.textContent = '未知状态';
-            break;
-        }
+         switch (status) {
+           case 0:
+           case 1:
+           case 2:
+           case 3:
+             statusText.textContent = 'Stopped';
+             break;
+           case 4:
+             statusText.textContent = 'Now Playing';
+             break;
+           case 5:
+             statusText.textContent = 'Paused';
+             break;
+           default:
+             statusText.textContent = 'Unknown Status';
+             break;
+         }
       }
     }
   </script>
