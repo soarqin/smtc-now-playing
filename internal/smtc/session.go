@@ -4,6 +4,7 @@ package smtc
 
 import (
 	"fmt"
+	"log/slog"
 	"unsafe"
 
 	"github.com/go-ole/go-ole"
@@ -249,7 +250,9 @@ func (s *Smtc) switchToSession(index int) {
 	s.handleMediaPropertiesChanged()
 
 	if s.opts.OnSelectedDeviceChange != nil && index < len(sessions) {
-		s.opts.OnSelectedDeviceChange(sessions[index].AppID)
+		appID := sessions[index].AppID
+		slog.Info("SMTC session changed", "app", appID)
+		s.opts.OnSelectedDeviceChange(appID)
 	}
 }
 

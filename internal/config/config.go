@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -14,6 +15,7 @@ type Config struct {
 	ShowPreviewWindow  bool   `json:"showpreviewwindow"`
 	PreviewAlwaysOnTop bool   `json:"previewalwaysontop"`
 	SelectedDevice     string `json:"selecteddevice"`
+	Debug              bool   `json:"debug"`
 }
 
 var config *Config
@@ -38,14 +40,23 @@ func Load() error {
 	dir = filepath.Dir(dir)
 	portableConfigPath := filepath.Join(dir, "portable_config.json")
 	if _, err := os.Stat(portableConfigPath); err == nil {
-		return loadConfigFromFile(portableConfigPath, config)
+		err := loadConfigFromFile(portableConfigPath, config)
+		if err == nil {
+			slog.Info("config loaded", "port", config.Port, "theme", config.Theme)
+		}
+		return err
 	}
 
 	appDataConfigPath := filepath.Join(os.Getenv("APPDATA"), "soarqin", "smtc-now-playing", "config.json")
 	if _, err := os.Stat(appDataConfigPath); err == nil {
-		return loadConfigFromFile(appDataConfigPath, config)
+		err := loadConfigFromFile(appDataConfigPath, config)
+		if err == nil {
+			slog.Info("config loaded", "port", config.Port, "theme", config.Theme)
+		}
+		return err
 	}
 
+	slog.Info("config loaded", "port", config.Port, "theme", config.Theme)
 	return nil
 }
 

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"log/slog"
 	"os"
 	"runtime"
 	"syscall"
@@ -35,6 +36,24 @@ func CreateMutex(name string) (uintptr, error) {
 
 func main() {
 	runtime.LockOSThread()
+
+	// Parse --debug flag
+	debug := false
+	for _, arg := range os.Args[1:] {
+		if arg == "--debug" {
+			debug = true
+			break
+		}
+	}
+
+	// Initialize slog with appropriate log level
+	logLevel := slog.LevelInfo
+	if debug {
+		logLevel = slog.LevelDebug
+	}
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})
+	slog.SetDefault(slog.New(handler))
+
 	config.Load()
 
 	mutex, err := CreateMutex("org.soardev.SmtcNowPlaying")

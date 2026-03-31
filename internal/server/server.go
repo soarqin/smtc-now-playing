@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 
@@ -172,6 +173,7 @@ type wsHandler struct {
 
 func (h *wsHandler) OnOpen(socket *gws.Conn) {
 	h.srv.addWebSocketConnection(socket)
+	slog.Info("WS client connected")
 	h.srv.currentMutex.Lock()
 	info := h.srv.currentInfo
 	progress := h.srv.currentProgress
@@ -186,6 +188,7 @@ func (h *wsHandler) OnOpen(socket *gws.Conn) {
 
 func (h *wsHandler) OnClose(socket *gws.Conn, err error) {
 	h.srv.removeWebSocketConnection(socket)
+	slog.Info("WS client disconnected")
 }
 
 func (h *wsHandler) OnPing(socket *gws.Conn, payload []byte) {
@@ -247,6 +250,7 @@ func (srv *WebServer) Start() {
 		}
 		srv.waitGroup.Done()
 	}()
+	slog.Info("server started", "port", srv.httpSrv.Addr)
 	srv.smtc.Start()
 }
 
@@ -263,6 +267,7 @@ func (srv *WebServer) Stop() {
 	srv.smtc.Stop()
 	srv.httpSrv.Close()
 	srv.waitGroup.Wait()
+	slog.Info("server stopped")
 }
 
 func (srv *WebServer) Address() string {
