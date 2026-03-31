@@ -218,6 +218,29 @@
       0%, 100% { opacity: 0.8; }
       50% { opacity: 1; text-shadow: 0 0 8px rgba(129, 236, 236, 0.4); }
     }
+
+    /* --- Playback state transitions --- */
+    html {
+      transition: opacity 0.5s ease-out;
+      opacity: 1;
+    }
+    html.idle {
+      opacity: 0;
+    }
+    html.playing {
+      opacity: 1;
+    }
+    html.paused {
+      opacity: 0.85;
+    }
+
+    /* Song change: fade track info during swap */
+    .song-info {
+      transition: opacity 0.15s ease-out;
+    }
+    html.transitioning .song-info {
+      opacity: 0.3;
+    }
   </style>
 </head>
 <body>

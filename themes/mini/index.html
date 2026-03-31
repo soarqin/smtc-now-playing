@@ -103,7 +103,30 @@
       width: 0%;
       height: 100%;
       background-color: #1db954;
-      transition: width 0.1s linear;
+      transition: width 0.15s linear;
+    }
+
+    /* --- Playback state transitions --- */
+    html {
+      transition: opacity 0.5s ease-out;
+      opacity: 1;
+    }
+    html.idle {
+      opacity: 0;
+    }
+    html.playing {
+      opacity: 1;
+    }
+    html.paused {
+      opacity: 0.85;
+    }
+
+    /* Song change: fade track info during swap */
+    .track-container {
+      transition: opacity 0.15s ease-out;
+    }
+    html.transitioning .track-container {
+      opacity: 0.3;
     }
   </style>
 </head>
