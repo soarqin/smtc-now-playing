@@ -160,7 +160,7 @@ func (s *Smtc) enumerateSessions() {
 			indices[appID]++
 			name = fmt.Sprintf("%s (%d)", name, indices[appID])
 		}
-		sessions[i] = SessionInfo{AppID: appID, Name: name}
+		sessions[i] = SessionInfo{AppID: appID, Name: name, SourceAppId: appID}
 	}
 
 	s.applySessionList(sessions, objects)

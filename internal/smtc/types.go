@@ -16,13 +16,20 @@ type InfoData struct {
 	Title                string
 	ThumbnailContentType string
 	ThumbnailData        []byte
+	AlbumTitle           string `json:"albumTitle"`
+	AlbumArtist          string `json:"albumArtist"`
+	PlaybackType         int    `json:"playbackType"` // 0=Unknown, 1=Music, 2=Video, 3=Image
 }
 
 // ProgressData holds playback progress passed to OnProgress callback
 type ProgressData struct {
-	Position int
-	Duration int
-	Status   int
+	Position        int
+	Duration        int
+	Status          int
+	PlaybackRate    float64 `json:"playbackRate"`
+	IsShuffleActive *bool   `json:"isShuffleActive"` // nil=unavailable, &true=on, &false=off
+	AutoRepeatMode  int     `json:"autoRepeatMode"`  // 0=None, 1=Track, 2=List
+	LastUpdatedTime int64   `json:"lastUpdatedTime"` // Unix milliseconds
 }
 
 // InfoCallback is called when media info changes
@@ -33,8 +40,9 @@ type ProgressCallback func(ProgressData)
 
 // SessionInfo holds metadata about an available SMTC session
 type SessionInfo struct {
-	AppID string
-	Name  string
+	AppID       string
+	Name        string
+	SourceAppId string
 }
 
 // Options configures the Smtc instance

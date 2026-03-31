@@ -5,7 +5,6 @@ package smtc
 import (
 	"log/slog"
 	"time"
-	"unsafe"
 )
 
 // readTimelineAndProgress reads position/duration/status from the current session
@@ -64,6 +63,37 @@ func (s *Smtc) readTimelineAndProgress() {
 		return
 	}
 
+	// Read playback rate via helper (default 1.0 if unavailable).
+	// Matches C++: playbackRatePtr ? playbackRatePtr.Value() : 1.0
+	newPlaybackRate := 1.0
+	playbackRateRef, _ := playbackInfo.GetPlaybackRate()
+	if val, ok := readNullableFloat64(playbackRateRef); ok {
+		newPlaybackRate = val
+	}
+
+	// Read shuffle active status (nil = unavailable, &true = on, &false = off).
+	var newIsShuffleActive *bool
+	shuffleRef, _ := playbackInfo.GetIsShuffleActive()
+	if val, ok := readNullableBool(shuffleRef); ok {
+		v := val
+		newIsShuffleActive = &v
+	}
+
+	// Read auto-repeat mode (0=None, 1=Track, 2=List).
+	newAutoRepeatMode := 0
+	repeatRef, _ := playbackInfo.GetAutoRepeatMode()
+	if val, ok := readNullableInt32(repeatRef); ok {
+		newAutoRepeatMode = int(val)
+	}
+
+	// Convert Windows DateTime (100ns ticks since 1601-01-01) to Unix milliseconds.
+	// Windows-to-Unix epoch offset: 116,444,736,000,000,000 * 100ns ticks.
+	const windowsToUnixEpochTicks = int64(116444736000000000)
+	var newLastUpdatedMs int64
+	if lastUpdated.UniversalTime != 0 {
+		newLastUpdatedMs = (lastUpdated.UniversalTime - windowsToUnixEpochTicks) / 10000
+	}
+
 	var newPosition, newDuration int
 
 	if lastUpdated.UniversalTime == 0 {
@@ -78,28 +108,14 @@ func (s *Smtc) readTimelineAndProgress() {
 		positionTicks := positionSpan.Duration
 
 		if newStatus == StatusPlaying {
-			// Get playback rate (default 1.0 if nil or error).
-			// Matches C++: playbackRatePtr ? playbackRatePtr.Value() : 1.0
-			rate := 1.0
-			playbackRateRef, rateErr := playbackInfo.GetPlaybackRate()
-			if rateErr == nil && playbackRateRef != nil {
-				if ptr, valErr := playbackRateRef.GetValue(); valErr == nil {
-					// IReference<Double>.GetValue() writes the float64 bits into an
-					// unsafe.Pointer-sized variable. Reinterpret the storage as float64.
-					rate = *(*float64)(unsafe.Pointer(&ptr))
-				}
-			}
-
 			// Convert lastUpdatedTime (Windows FILETIME, 100ns ticks since 1601-01-01)
 			// to Go time.Time for delta calculation.
-			// Windows-to-Unix epoch offset: 116,444,736,000,000,000 * 100ns ticks.
-			const windowsToUnixEpochTicks = int64(116444736000000000)
 			lastUpdatedNano := (lastUpdated.UniversalTime - windowsToUnixEpochTicks) * 100
-			lastUpdatedTime := time.Unix(0, lastUpdatedNano)
+			lastUpdatedGoTime := time.Unix(0, lastUpdatedNano)
 
 			// Delta in 100ns ticks: time.Since returns nanoseconds, divide by 100.
-			deltaTicks := int64(time.Since(lastUpdatedTime)) / 100
-			interpolatedTicks := positionTicks + int64(float64(deltaTicks)*rate)
+			deltaTicks := int64(time.Since(lastUpdatedGoTime)) / 100
+			interpolatedTicks := positionTicks + int64(float64(deltaTicks)*newPlaybackRate)
 			newPosition = int(interpolatedTicks / 10_000_000)
 		} else {
 			newPosition = int(positionTicks / 10_000_000)
@@ -108,7 +124,7 @@ func (s *Smtc) readTimelineAndProgress() {
 		newDuration = int(endTimeSpan.Duration / 10_000_000)
 	}
 
-	// Only fire callback if values changed.
+	// Only fire callback if position/duration/status changed.
 	s.mu.Lock()
 	if newPosition == s.currentPosition && newDuration == s.currentDuration && newStatus == s.currentStatus {
 		s.mu.Unlock()
@@ -121,9 +137,13 @@ func (s *Smtc) readTimelineAndProgress() {
 
 	if s.opts.OnProgress != nil {
 		s.opts.OnProgress(ProgressData{
-			Position: newPosition,
-			Duration: newDuration,
-			Status:   newStatus,
+			Position:        newPosition,
+			Duration:        newDuration,
+			Status:          newStatus,
+			PlaybackRate:    newPlaybackRate,
+			IsShuffleActive: newIsShuffleActive,
+			AutoRepeatMode:  newAutoRepeatMode,
+			LastUpdatedTime: newLastUpdatedMs,
 		})
 	}
 }

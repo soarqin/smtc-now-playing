@@ -63,11 +63,19 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	s.currentTitle = escapedTitle
 
 	if s.opts.OnInfo != nil {
+		// Extract album info and playback type just before firing the callback.
+		albumTitle, _ := props.GetAlbumTitle()
+		albumArtist, _ := props.GetAlbumArtist()
+		playbackTypeRef, _ := props.GetPlaybackType()
+		playbackType, _ := readNullableInt32(playbackTypeRef)
 		s.opts.OnInfo(InfoData{
 			Artist:               s.currentArtist,
 			Title:                s.currentTitle,
 			ThumbnailContentType: contentType,
 			ThumbnailData:        thumbData,
+			AlbumTitle:           escape(albumTitle),
+			AlbumArtist:          escape(albumArtist),
+			PlaybackType:         int(playbackType),
 		})
 	}
 }
