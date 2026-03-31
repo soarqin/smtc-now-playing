@@ -38,6 +38,18 @@ type InfoCallback func(InfoData)
 // ProgressCallback is called when playback progress changes
 type ProgressCallback func(ProgressData)
 
+// ControlCapabilities reports which media controls the current session supports.
+type ControlCapabilities struct {
+	IsPlayEnabled     bool `json:"isPlayEnabled"`
+	IsPauseEnabled    bool `json:"isPauseEnabled"`
+	IsStopEnabled     bool `json:"isStopEnabled"`
+	IsNextEnabled     bool `json:"isNextEnabled"`
+	IsPreviousEnabled bool `json:"isPreviousEnabled"`
+	IsSeekEnabled     bool `json:"isSeekEnabled"` // position control
+	IsShuffleEnabled  bool `json:"isShuffleEnabled"`
+	IsRepeatEnabled   bool `json:"isRepeatEnabled"`
+}
+
 // SessionInfo holds metadata about an available SMTC session
 type SessionInfo struct {
 	AppID       string
