@@ -12,7 +12,7 @@ import (
 // TestHandleNowPlaying_NoSession_404 verifies that /api/now-playing returns
 // 404 when no active session exists (currentInfo is empty).
 func TestHandleNowPlaying_NoSession_404(t *testing.T) {
-	srv := New("localhost", "0", "default", "")
+	srv := New("localhost", "0", "default", "", false)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/now-playing", nil)
 	w := httptest.NewRecorder()
@@ -27,7 +27,7 @@ func TestHandleNowPlaying_NoSession_404(t *testing.T) {
 // TestHandleNowPlaying_WithData_200 verifies that /api/now-playing returns 200
 // with info and progress JSON fields when media info is set.
 func TestHandleNowPlaying_WithData_200(t *testing.T) {
-	srv := New("localhost", "0", "default", "")
+	srv := New("localhost", "0", "default", "", false)
 
 	// Inject info in the same wire format as handleInfoUpdate produces.
 	info := infoDetail{Title: "Test Track", Artist: "Test Artist"}
@@ -74,7 +74,7 @@ func TestHandleNowPlaying_WithData_200(t *testing.T) {
 // TestHandleDevices_Empty_ReturnsArray verifies that /api/devices returns a
 // JSON array (not null) even when no sessions are available.
 func TestHandleDevices_Empty_ReturnsArray(t *testing.T) {
-	srv := New("localhost", "0", "default", "")
+	srv := New("localhost", "0", "default", "", false)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/devices", nil)
 	w := httptest.NewRecorder()
@@ -103,7 +103,7 @@ func TestHandleDevices_Empty_ReturnsArray(t *testing.T) {
 // TestHandleDevices_WithSessions_200 verifies that /api/devices returns the
 // full session list when sessions are available.
 func TestHandleDevices_WithSessions_200(t *testing.T) {
-	srv := New("localhost", "0", "default", "")
+	srv := New("localhost", "0", "default", "", false)
 
 	srv.sessionsMutex.Lock()
 	srv.sessions = []smtc.SessionInfo{
@@ -138,7 +138,7 @@ func TestHandleDevices_WithSessions_200(t *testing.T) {
 // TestHandleCapabilities_200 verifies that /api/capabilities returns 200 with
 // a valid JSON object body.
 func TestHandleCapabilities_200(t *testing.T) {
-	srv := New("localhost", "0", "default", "")
+	srv := New("localhost", "0", "default", "", false)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/capabilities", nil)
 	w := httptest.NewRecorder()
@@ -157,3 +157,4 @@ func TestHandleCapabilities_200(t *testing.T) {
 		t.Fatalf("response body is not a valid JSON object: %v", err)
 	}
 }
+

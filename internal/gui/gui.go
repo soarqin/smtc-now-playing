@@ -548,7 +548,7 @@ func (me *Gui) syncConfig() {
 
 func (me *Gui) startWebServer() {
 	me.btnStart.Hwnd().EnableWindow(false)
-	me.srv = server.New("0.0.0.0", me.portEdit.Text(), me.themeCombo.CurrentText(), config.Get().SelectedDevice)
+	me.srv = server.New("0.0.0.0", me.portEdit.Text(), me.themeCombo.CurrentText(), config.Get().SelectedDevice, config.Get().HotReload)
 	hwnd := me.wnd.Hwnd()
 	me.srv.SetOnSessionsChanged(func() {
 		hwnd.PostMessage(WM_SESSIONS_CHANGED, 0, 0)

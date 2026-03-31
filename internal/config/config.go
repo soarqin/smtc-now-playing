@@ -16,6 +16,7 @@ type Config struct {
 	PreviewAlwaysOnTop bool   `json:"previewalwaysontop"`
 	SelectedDevice     string `json:"selecteddevice"`
 	Debug              bool   `json:"debug"`
+	HotReload          bool   `json:"hotReload"`
 }
 
 var config *Config

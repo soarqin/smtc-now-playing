@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/lxzan/gws"
 	"smtc-now-playing/internal/smtc"
 )
@@ -30,6 +32,10 @@ type WebServer struct {
 	albumArtContentType string
 	albumArtData        []byte
 
+	// Hot-reload file watcher
+	hotReload bool
+	watcher   *fsnotify.Watcher
+
 	// Device selection
 	sessionsMutex          sync.Mutex
 	sessions               []smtc.SessionInfo
@@ -49,7 +55,7 @@ type progressDetail struct {
 	Status   int `json:"status"`
 }
 
-func New(host string, port string, theme string, selectedDevice string) *WebServer {
+func New(host string, port string, theme string, selectedDevice string, hotReload bool) *WebServer {
 	mux := http.NewServeMux()
 	srv := &WebServer{
 		httpSrv: &http.Server{
@@ -58,6 +64,7 @@ func New(host string, port string, theme string, selectedDevice string) *WebServ
 		},
 		currentTheme:  theme,
 		wsConnections: make(map[*gws.Conn]struct{}),
+		hotReload:     hotReload,
 	}
 
 	srv.smtc = smtc.New(smtc.Options{
@@ -244,6 +251,47 @@ func (srv *WebServer) handleScript(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, r.URL.Path[1:])
 }
 
+// startHotReload watches the given theme directory for file changes and
+// broadcasts a reload WebSocket message to all clients on each change.
+func (srv *WebServer) startHotReload(themePath string) {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		slog.Error("failed to create file watcher", "err", err)
+		return
+	}
+	if err := w.Add(themePath); err != nil {
+		slog.Error("failed to watch theme dir", "err", err, "path", themePath)
+		w.Close()
+		return
+	}
+	srv.watcher = w
+	srv.waitGroup.Add(1)
+	go func() {
+		defer srv.waitGroup.Done()
+		debounce := time.NewTimer(0)
+		<-debounce.C // drain initial tick
+		debounce.Stop()
+		for {
+			select {
+			case event, ok := <-srv.watcher.Events:
+				if !ok {
+					return
+				}
+				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+					debounce.Reset(500 * time.Millisecond)
+				}
+			case _, ok := <-srv.watcher.Errors:
+				if !ok {
+					return
+				}
+			case <-debounce.C:
+				srv.broadcastMessage([]byte(`{"type":"reload"}`))
+				slog.Info("theme reload triggered")
+			}
+		}
+	}()
+}
+
 func (srv *WebServer) Start() {
 	srv.errorChan = make(chan error, 1)
 	srv.waitGroup.Add(1)
@@ -256,6 +304,9 @@ func (srv *WebServer) Start() {
 	}()
 	slog.Info("server started", "port", srv.httpSrv.Addr)
 	srv.smtc.Start()
+	if srv.hotReload {
+		srv.startHotReload(fmt.Sprintf("themes/%s", srv.currentTheme))
+	}
 }
 
 func (srv *WebServer) Stop() {
@@ -268,6 +319,10 @@ func (srv *WebServer) Stop() {
 		conn.WriteClose(1000, nil)
 	}
 	srv.wsConnectionsMutex.Unlock()
+	if srv.watcher != nil {
+		srv.watcher.Close()
+		srv.watcher = nil
+	}
 	srv.smtc.Stop()
 	srv.httpSrv.Close()
 	srv.waitGroup.Wait()

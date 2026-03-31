@@ -65,6 +65,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (status !== undefined)
                     window.setPlayingStatus(data.data.status)
                 break
+            case 'reload':
+                location.reload()
+                break
             default:
                 break
         }

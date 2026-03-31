@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	golang.org/x/sys v0.42.0 // indirect
