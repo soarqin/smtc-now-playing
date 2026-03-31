@@ -136,6 +136,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Update current track state immediately
                 currentTitle = title;
                 currentArtist = artist;
+
+                // Call enriched info callback if available
+                if (typeof window.setExtendedInfo === 'function') {
+                    window.setExtendedInfo({
+                        albumTitle: data.data.albumTitle || '',
+                        albumArtist: data.data.albumArtist || '',
+                        playbackType: data.data.playbackType || 0,
+                        sourceApp: data.data.sourceApp || ''
+                    });
+                }
                 break;
             }
             case 'progress': {
@@ -191,6 +201,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 } else {
                     stopAnimationLoop();
                     window.setProgress(pos, dur);
+                }
+
+                // Call enriched progress callback if available
+                if (typeof window.setExtendedProgress === 'function') {
+                    window.setExtendedProgress({
+                        playbackRate: data.data.playbackRate || 1.0,
+                        isShuffleActive: data.data.isShuffleActive,
+                        autoRepeatMode: data.data.autoRepeatMode || 0,
+                        lastUpdatedTime: data.data.lastUpdatedTime || 0
+                    });
                 }
                 break;
             }
