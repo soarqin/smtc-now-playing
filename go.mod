@@ -3,6 +3,7 @@ module smtc-now-playing
 go 1.25.6
 
 require (
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-ole/go-ole v1.3.0
 	github.com/lxzan/gws v1.9.1
 	github.com/rodrigocfd/windigo v0.2.5
@@ -11,7 +12,6 @@ require (
 )
 
 require (
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	golang.org/x/sys v0.42.0 // indirect
