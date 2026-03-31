@@ -37,7 +37,7 @@
 # Dist folders
 /dist/
 
-# Claude Code directories
+# Agents' directories
 .claude/
 .claude-plugins/
 .claude-sessions/

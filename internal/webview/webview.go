@@ -1,7 +1,7 @@
 package webview
 
 import (
-	"log"
+	"log/slog"
 	"unsafe"
 
 	"github.com/rodrigocfd/windigo/co"
@@ -122,7 +122,8 @@ func New(opts Options) *Preview {
 	wv := &Preview{}
 	wv.webViewWin = webview2.NewWithOptions(webViewOptions)
 	if wv.webViewWin == nil {
-		log.Fatalln("Failed to load webview.")
+		slog.Error("failed to load webview, preview disabled")
+		return wv
 	}
 
 	if opts.OnRootLoaded != nil {

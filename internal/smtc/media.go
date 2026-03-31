@@ -3,6 +3,7 @@
 package smtc
 
 import (
+	"log/slog"
 	"unsafe"
 
 	"github.com/saltosystems/winrt-go/windows/foundation"
@@ -19,6 +20,7 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 
 	op, err := s.currentSession.TryGetMediaPropertiesAsync()
 	if err != nil {
+		slog.Debug("failed to get media properties async", "err", err)
 		s.clearMediaInfo()
 		return
 	}
@@ -98,6 +100,9 @@ func (s *Smtc) handlePlaybackInfoChanged() {
 
 	playbackInfo, err := s.currentSession.GetPlaybackInfo()
 	if err != nil || playbackInfo == nil {
+		if err != nil {
+			slog.Debug("failed to get playback info", "err", err)
+		}
 		return
 	}
 
@@ -106,6 +111,7 @@ func (s *Smtc) handlePlaybackInfoChanged() {
 	// Our StatusClosed..StatusPaused constants match exactly.
 	status, err := playbackInfo.GetPlaybackStatus()
 	if err != nil {
+		slog.Debug("failed to get playback status", "err", err)
 		return
 	}
 

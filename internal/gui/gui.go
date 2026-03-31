@@ -197,13 +197,15 @@ func (me *Gui) events() {
 
 		notifyIcon, err = NewNotifyIcon(me.wnd.Hwnd())
 		if err != nil {
-			panic(err)
+			me.wnd.Hwnd().MessageBox(err.Error(), "Fatal Error", co.MB_ICONERROR)
+			os.Exit(1)
 		}
 
 		notifyIcon.SetTooltip("Smtc Now Playing")
 		hInstance, err := win.GetModuleHandle("")
 		if err != nil {
-			panic(err)
+			me.wnd.Hwnd().MessageBox(err.Error(), "Fatal Error", co.MB_ICONERROR)
+			os.Exit(1)
 		}
 		hIcon, err := hInstance.LoadIcon(win.IconResStr("APP"))
 		if err == nil {
