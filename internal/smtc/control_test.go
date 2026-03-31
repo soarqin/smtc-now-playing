@@ -96,14 +96,14 @@ func TestSkipNext_NoSession(t *testing.T) {
 	}
 }
 
-// TestSeek_NoSession verifies that Seek() returns ErrNoSession when no session is active.
+// TestSeek_NoSession verifies that SeekTo() returns ErrNoSession when no session is active.
 func TestSeek_NoSession(t *testing.T) {
 	s := New(Options{})
 	go func() { fn := <-s.cmdChan; fn() }()
 
-	err := s.Seek(30000)
+	err := s.SeekTo(30000)
 	if !errors.Is(err, ErrNoSession) {
-		t.Errorf("Seek() with no session: got %v, want ErrNoSession", err)
+		t.Errorf("SeekTo() with no session: got %v, want ErrNoSession", err)
 	}
 }
 

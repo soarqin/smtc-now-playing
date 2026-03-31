@@ -98,10 +98,10 @@ func (s *Smtc) SkipPrevious() error {
 	return s.sendControl(controlCommand{action: ControlSkipPrevious})
 }
 
-// Seek requests the playback position of the current SMTC session to change to positionMs.
+// SeekTo requests the playback position of the current SMTC session to change to positionMs.
 // positionMs is the target position in milliseconds.
 // Blocks until the WinRT async call completes.
-func (s *Smtc) Seek(positionMs int64) error {
+func (s *Smtc) SeekTo(positionMs int64) error {
 	return s.sendControl(controlCommand{action: ControlSeek, seekPosition: positionMs})
 }
 

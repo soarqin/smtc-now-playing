@@ -151,7 +151,7 @@ func (srv *WebServer) handleControlSeek(w http.ResponseWriter, r *http.Request) 
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "invalid request body"})
 		return
 	}
-	srv.handleControl(w, r, func() error { return srv.smtc.Seek(body.Position) })
+	srv.handleControl(w, r, func() error { return srv.smtc.SeekTo(body.Position) })
 }
 
 // handleControlShuffle handles POST /api/control/shuffle.
