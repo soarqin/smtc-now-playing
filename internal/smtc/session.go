@@ -97,6 +97,8 @@ func (s *Smtc) subscribeSessionsChanged() {
 		select {
 		case s.cmdChan <- func() { s.enumerateSessions() }:
 		default:
+			s.droppedEvents.Add(1)
+			slog.Warn("SMTC event dropped", "type", "SessionsChanged", "dropped_total", s.droppedEvents.Load())
 		}
 	})
 	token, _ := s.sessionManager.AddSessionsChanged(handler)
@@ -268,6 +270,8 @@ func (s *Smtc) subscribePropertyEvents() {
 		select {
 		case s.cmdChan <- func() { s.handleMediaPropertiesChanged() }:
 		default:
+			s.droppedEvents.Add(1)
+			slog.Warn("SMTC event dropped", "type", "MediaPropertiesChanged", "dropped_total", s.droppedEvents.Load())
 		}
 	})
 	token, _ := s.currentSession.AddMediaPropertiesChanged(mediaHandler)
@@ -283,6 +287,8 @@ func (s *Smtc) subscribePropertyEvents() {
 		select {
 		case s.cmdChan <- func() { s.handlePlaybackInfoChanged() }:
 		default:
+			s.droppedEvents.Add(1)
+			slog.Warn("SMTC event dropped", "type", "PlaybackInfoChanged", "dropped_total", s.droppedEvents.Load())
 		}
 	})
 	token, _ = s.currentSession.AddPlaybackInfoChanged(playbackHandler)

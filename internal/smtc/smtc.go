@@ -5,6 +5,7 @@ package smtc
 import (
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-ole/go-ole"
@@ -14,10 +15,11 @@ import (
 
 // Smtc manages Windows System Media Transport Controls with callback-based updates
 type Smtc struct {
-	opts     Options
-	quitChan chan struct{}
-	cmdChan  chan func()
-	mu       sync.Mutex // protects sessions, sessionObjects, currentStatus, currentPosition, currentDuration, currentArtist, currentTitle, currentThumbnailSize, currentProperties
+	opts          Options
+	quitChan      chan struct{}
+	cmdChan       chan func()
+	droppedEvents atomic.Int64
+	mu            sync.Mutex // protects sessions, sessionObjects, currentStatus, currentPosition, currentDuration, currentArtist, currentTitle, currentThumbnailSize, currentProperties
 
 	// Session management
 	sessionManager *control.GlobalSystemMediaTransportControlsSessionManager
@@ -55,7 +57,7 @@ func New(opts Options) *Smtc {
 	return &Smtc{
 		opts:          opts,
 		quitChan:      make(chan struct{}),
-		cmdChan:       make(chan func(), 8),
+		cmdChan:       make(chan func(), 32),
 		selectedAppID: opts.InitialDevice,
 	}
 }
