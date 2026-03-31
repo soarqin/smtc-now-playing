@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 
 	"smtc-now-playing/internal/config"
 	"smtc-now-playing/internal/server"
+	"smtc-now-playing/internal/updater"
 	"smtc-now-playing/internal/webview"
 
 	"github.com/rodrigocfd/windigo/co"
@@ -166,6 +168,19 @@ func New(version string) *Gui {
 	}
 
 	me.events()
+
+	// Check for updates in the background without blocking startup.
+	go func() {
+		info, err := updater.CheckForUpdate(version, updater.DefaultAPIURL)
+		if err != nil {
+			slog.Warn("update check failed", "err", err)
+			return
+		}
+		if info != nil && info.Available {
+			slog.Info("update available", "version", info.Version, "url", info.URL)
+		}
+	}()
+
 	return me
 }
 
