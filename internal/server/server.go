@@ -109,6 +109,15 @@ func New(host string, port string, theme string, selectedDevice string, hotReloa
 	mux.HandleFunc("GET /api/devices", srv.handleDevices)
 	mux.HandleFunc("GET /api/sessions", srv.handleDevices)
 	mux.HandleFunc("GET /api/capabilities", srv.handleCapabilities)
+	mux.HandleFunc("POST /api/control/play", srv.handleControlPlay)
+	mux.HandleFunc("POST /api/control/pause", srv.handleControlPause)
+	mux.HandleFunc("POST /api/control/stop", srv.handleControlStop)
+	mux.HandleFunc("POST /api/control/toggle", srv.handleControlToggle)
+	mux.HandleFunc("POST /api/control/next", srv.handleControlNext)
+	mux.HandleFunc("POST /api/control/previous", srv.handleControlPrevious)
+	mux.HandleFunc("POST /api/control/seek", srv.handleControlSeek)
+	mux.HandleFunc("POST /api/control/shuffle", srv.handleControlShuffle)
+	mux.HandleFunc("POST /api/control/repeat", srv.handleControlRepeat)
 	mux.HandleFunc("/", srv.handleStatic)
 
 	return srv

@@ -158,3 +158,82 @@ func TestHandleCapabilities_200(t *testing.T) {
 	}
 }
 
+// TestHandleControlPlay_LocalhostAllowed verifies that a localhost request
+// is allowed through the localhost guard and returns HTTP 200 with success:true.
+// handleControl is tested directly with a stub action to avoid deadlock from
+// smtc.Play requiring a running SMTC event-loop goroutine (not started in tests).
+func TestHandleControlPlay_LocalhostAllowed(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/control/play", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+
+	// Stub action returns nil (success) — isolates the localhost-guard logic.
+	srv.handleControl(w, req, func() error { return nil })
+
+	if w.Code != http.StatusOK {
+		t.Errorf("handleControl localhost: got HTTP %d, want %d", w.Code, http.StatusOK)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type: got %q, want \"application/json\"", ct)
+	}
+	var result map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("response not valid JSON: %v", err)
+	}
+	if result["success"] != true {
+		t.Errorf("success: got %v, want true", result["success"])
+	}
+}
+
+// TestHandleControlPlay_RemoteForbidden verifies that a non-localhost request
+// is rejected with HTTP 403 when controlAllowRemote is false (the default).
+// The localhost guard fires before smtc.Play is called, so no deadlock occurs.
+func TestHandleControlPlay_RemoteForbidden(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/control/play", nil)
+	req.RemoteAddr = "192.168.1.100:12345"
+	w := httptest.NewRecorder()
+
+	// Guard fires before smtc.Play — no deadlock.
+	srv.handleControlPlay(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("handleControlPlay remote: got HTTP %d, want %d", w.Code, http.StatusForbidden)
+	}
+}
+
+// TestHandleCapabilities_ReturnsShape verifies that /api/capabilities returns
+// a JSON object containing all expected ControlCapabilities fields.
+// handleCapabilities uses a 50ms timeout; in tests (no SMTC session) it returns
+// zero-value capabilities after the timeout.
+func TestHandleCapabilities_ReturnsShape(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/capabilities", nil)
+	w := httptest.NewRecorder()
+
+	srv.handleCapabilities(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("handleCapabilities: got HTTP %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("response not valid JSON object: %v", err)
+	}
+
+	expectedFields := []string{
+		"isPlayEnabled", "isPauseEnabled", "isStopEnabled",
+		"isNextEnabled", "isPreviousEnabled", "isSeekEnabled",
+		"isShuffleEnabled", "isRepeatEnabled",
+	}
+	for _, field := range expectedFields {
+		if _, ok := result[field]; !ok {
+			t.Errorf("capabilities response missing field %q", field)
+		}
+	}
+}

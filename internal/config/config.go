@@ -17,6 +17,9 @@ type Config struct {
 	SelectedDevice     string `json:"selecteddevice"`
 	Debug              bool   `json:"debug"`
 	HotReload          bool   `json:"hotReload"`
+	// ControlAllowRemote allows media control endpoints to be accessed from
+	// non-localhost addresses when true. Defaults to false (localhost-only).
+	ControlAllowRemote bool `json:"controlAllowRemote"`
 }
 
 var config *Config
