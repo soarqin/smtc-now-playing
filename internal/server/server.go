@@ -21,9 +21,10 @@ type WebServer struct {
 
 	currentTheme string
 
-	currentMutex    sync.Mutex
-	currentInfo     string
-	currentProgress string
+	currentMutex     sync.Mutex
+	currentInfo      string
+	currentProgress  string
+	currentSourceApp string
 
 	errorChan           chan error
 	waitGroup           sync.WaitGroup
@@ -44,15 +45,23 @@ type WebServer struct {
 }
 
 type infoDetail struct {
-	Title    string `json:"title"`
-	Artist   string `json:"artist"`
-	AlbumArt string `json:"albumArt"`
+	Title        string `json:"title"`
+	Artist       string `json:"artist"`
+	AlbumArt     string `json:"albumArt"`
+	AlbumTitle   string `json:"albumTitle"`
+	AlbumArtist  string `json:"albumArtist"`
+	PlaybackType int    `json:"playbackType"`
+	SourceApp    string `json:"sourceApp"`
 }
 
 type progressDetail struct {
-	Position int `json:"position"`
-	Duration int `json:"duration"`
-	Status   int `json:"status"`
+	Position        int     `json:"position"`
+	Duration        int     `json:"duration"`
+	Status          int     `json:"status"`
+	PlaybackRate    float64 `json:"playbackRate"`
+	IsShuffleActive *bool   `json:"isShuffleActive"`
+	AutoRepeatMode  int     `json:"autoRepeatMode"`
+	LastUpdatedTime int64   `json:"lastUpdatedTime"`
 }
 
 func New(host string, port string, theme string, selectedDevice string, hotReload bool) *WebServer {
@@ -83,6 +92,9 @@ func New(host string, port string, theme string, selectedDevice string, hotReloa
 			}
 		},
 		OnSelectedDeviceChange: func(appID string) {
+			srv.currentMutex.Lock()
+			srv.currentSourceApp = appID
+			srv.currentMutex.Unlock()
 			if srv.onSelectedDeviceChange != nil {
 				srv.onSelectedDeviceChange(appID)
 			}
@@ -106,7 +118,11 @@ func (srv *WebServer) handleInfoUpdate(data smtc.InfoData) {
 	var info infoDetail
 	info.Artist = data.Artist
 	info.Title = data.Title
+	info.AlbumTitle = data.AlbumTitle
+	info.AlbumArtist = data.AlbumArtist
+	info.PlaybackType = data.PlaybackType
 	srv.currentMutex.Lock()
+	info.SourceApp = srv.currentSourceApp
 	if len(data.ThumbnailData) > 0 {
 		srv.albumArtContentType = data.ThumbnailContentType
 		srv.albumArtData = data.ThumbnailData
@@ -137,9 +153,13 @@ func (srv *WebServer) handleInfoUpdate(data smtc.InfoData) {
 
 func (srv *WebServer) handleProgressUpdate(data smtc.ProgressData) {
 	progress := progressDetail{
-		Position: data.Position,
-		Duration: data.Duration,
-		Status:   data.Status,
+		Position:        data.Position,
+		Duration:        data.Duration,
+		Status:          data.Status,
+		PlaybackRate:    data.PlaybackRate,
+		IsShuffleActive: data.IsShuffleActive,
+		AutoRepeatMode:  data.AutoRepeatMode,
+		LastUpdatedTime: data.LastUpdatedTime,
 	}
 	j, err := json.Marshal(&struct {
 		Type string          `json:"type"`
@@ -313,6 +333,7 @@ func (srv *WebServer) Stop() {
 	srv.currentMutex.Lock()
 	srv.currentInfo = ""
 	srv.currentProgress = ""
+	srv.currentSourceApp = ""
 	srv.currentMutex.Unlock()
 	srv.wsConnectionsMutex.Lock()
 	for conn := range srv.wsConnections {
