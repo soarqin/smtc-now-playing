@@ -102,25 +102,11 @@ func (s *Smtc) readTimelineAndProgress() {
 		newPosition = 0
 		newDuration = 0
 	} else {
-		// Position interpolation:
-		// C++: position += (now - lastUpdatedTime) * playbackRate
-		// Convert 100ns ticks to seconds: ticks / 10_000_000
-		positionTicks := positionSpan.Duration
-
-		if newStatus == StatusPlaying {
-			// Convert lastUpdatedTime (Windows FILETIME, 100ns ticks since 1601-01-01)
-			// to Go time.Time for delta calculation.
-			lastUpdatedNano := (lastUpdated.UniversalTime - windowsToUnixEpochTicks) * 100
-			lastUpdatedGoTime := time.Unix(0, lastUpdatedNano)
-
-			// Delta in 100ns ticks: time.Since returns nanoseconds, divide by 100.
-			deltaTicks := int64(time.Since(lastUpdatedGoTime)) / 100
-			interpolatedTicks := positionTicks + int64(float64(deltaTicks)*newPlaybackRate)
-			newPosition = int(interpolatedTicks / 10_000_000)
-		} else {
-			newPosition = int(positionTicks / 10_000_000)
-		}
-
+		// Send the raw position from SMTC without server-side interpolation.
+		// The frontend (functions.js) performs client-side interpolation using
+		// lastUpdatedTime and playbackRate, so adding a server-side delta here
+		// would cause double-interpolation and make the progress bar run too fast.
+		newPosition = int(positionSpan.Duration / 10_000_000)
 		newDuration = int(endTimeSpan.Duration / 10_000_000)
 	}
 
