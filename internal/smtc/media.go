@@ -4,6 +4,7 @@ package smtc
 
 import (
 	"log/slog"
+	"time"
 	"unsafe"
 
 	"github.com/saltosystems/winrt-go/windows/foundation"
@@ -54,6 +55,28 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	oldThumbLen := len(s.currentThumbnailData)
 	// Always read thumbnail — it may have changed independently of artist/title.
 	contentType, thumbData := s.readThumbnail()
+
+	// When song changes but thumbnail is not yet available, delay the OnInfo callback
+	// to allow SMTC time to write the thumbnail. This prevents the cover art from
+	// briefly disappearing when the track changes.
+	if artistChanged && thumbData == nil {
+		s.currentArtist = escapedArtist
+		s.currentTitle = escapedTitle
+		// Cancel any pending retry from a previous song change.
+		if s.thumbnailRetryTimer != nil {
+			s.thumbnailRetryTimer.Stop()
+		}
+		s.thumbnailRetryTimer = time.AfterFunc(50*time.Millisecond, func() {
+			select {
+			case s.cmdChan <- func() { s.retryThumbnailAndFireInfo(escapedArtist, escapedTitle, props) }:
+			default:
+				s.droppedEvents.Add(1)
+				slog.Warn("SMTC event dropped", "type", "ThumbnailRetry", "dropped_total", s.droppedEvents.Load())
+			}
+		})
+		return
+	}
+
 	// readThumbnail returns stored data on dedup hit, so compare by length as a proxy.
 	thumbChanged := len(thumbData) != oldThumbLen
 	if !artistChanged && !thumbChanged {
@@ -71,6 +94,35 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 		s.opts.OnInfo(InfoData{
 			Artist:               s.currentArtist,
 			Title:                s.currentTitle,
+			ThumbnailContentType: contentType,
+			ThumbnailData:        thumbData,
+			AlbumTitle:           escape(albumTitle),
+			AlbumArtist:          escape(albumArtist),
+			PlaybackType:         int(playbackType),
+		})
+	}
+}
+
+// retryThumbnailAndFireInfo is called ~50ms after a song change when the initial
+// readThumbnail returned nil. By this time SMTC has usually written the thumbnail.
+// Fires OnInfo regardless of whether a thumbnail is available, so the client
+// always receives the new track info (with or without cover art).
+// Must be called from the smtc goroutine (via cmdChan).
+func (s *Smtc) retryThumbnailAndFireInfo(artist, title string, props *control.GlobalSystemMediaTransportControlsSessionMediaProperties) {
+	s.thumbnailRetryTimer = nil
+	// If the song has already changed again, this retry is stale — discard it.
+	if s.currentArtist != artist || s.currentTitle != title {
+		return
+	}
+	contentType, thumbData := s.readThumbnail()
+	if s.opts.OnInfo != nil {
+		albumTitle, _ := props.GetAlbumTitle()
+		albumArtist, _ := props.GetAlbumArtist()
+		playbackTypeRef, _ := props.GetPlaybackType()
+		playbackType, _ := readNullableInt32(playbackTypeRef)
+		s.opts.OnInfo(InfoData{
+			Artist:               artist,
+			Title:                title,
 			ThumbnailContentType: contentType,
 			ThumbnailData:        thumbData,
 			AlbumTitle:           escape(albumTitle),

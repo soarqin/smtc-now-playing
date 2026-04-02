@@ -50,6 +50,11 @@ type Smtc struct {
 
 	// currentProperties holds the latest media properties object for thumbnail reading.
 	currentProperties *control.GlobalSystemMediaTransportControlsSessionMediaProperties
+
+	// thumbnailRetryTimer is used to delay thumbnail reading when a song changes
+	// but the thumbnail is not yet available. Prevents flickering by waiting for
+	// the thumbnail to be ready before firing OnInfo.
+	thumbnailRetryTimer *time.Timer
 }
 
 // New creates a new Smtc instance with the given options
@@ -109,6 +114,10 @@ func (s *Smtc) Start() error {
 
 // Stop stops monitoring SMTC by signalling the dedicated goroutine to exit.
 func (s *Smtc) Stop() {
+	// Cancel any pending thumbnail retry timer to prevent goroutine leaks.
+	if s.thumbnailRetryTimer != nil {
+		s.thumbnailRetryTimer.Stop()
+	}
 	close(s.quitChan)
 }
 
