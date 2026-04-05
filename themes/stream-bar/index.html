@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+  <title>Now Playing</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: transparent;
+      color: #fff;
+      overflow: hidden;
+    }
+
+    /* Bar container — fixed to bottom, slides up on load */
+    .bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      app-region: drag;
+      transform: translateY(100%);
+      animation: bar-enter 0.5s ease-out 0.1s forwards;
+    }
+    @keyframes bar-enter {
+      to { transform: translateY(0); }
+    }
+
+    /* Progress bar — full-height background layer behind content */
+    .progress-track {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .progress-fill {
+      width: 0%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      transition: width 0.2s linear;
+    }
+
+    /* Three-column grid: left=track, center=status, right=time */
+    .bar-content {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 5px 24px;
+    }
+
+    /* Track text: title · artist in one line, left-aligned */
+    .track-text {
+      display: flex;
+      align-items: baseline;
+      overflow: hidden;
+      white-space: nowrap;
+      min-width: 0;
+      justify-self: start;
+      transition: opacity 0.2s ease;
+    }
+    .title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #fff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex-shrink: 1;
+      min-width: 0;
+    }
+    .separator {
+      color: rgba(255, 255, 255, 0.25);
+      flex-shrink: 0;
+      padding: 0 6px;
+      font-size: 0.8rem;
+    }
+    .artist {
+      font-size: 0.8rem;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.45);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex-shrink: 1;
+      min-width: 0;
+    }
+
+    /* Status indicator: dot + label, centered */
+    .status {
+      justify-self: center;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .status-dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #333;
+      flex-shrink: 0;
+    }
+    .status-dot.playing {
+      background: #fff;
+      box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+      animation: dot-pulse 2s ease-in-out infinite;
+    }
+    .status-dot.paused {
+      background: #555;
+      animation: none;
+    }
+    .status-dot.stopped {
+      background: #333;
+      animation: none;
+    }
+    @keyframes dot-pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+    .status-label {
+      font-size: 0.6rem;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #555;
+    }
+    .status.playing .status-label { color: #888; }
+    .status.paused .status-label { color: #888; }
+
+    /* Time display, right-aligned */
+    .time {
+      font-size: 0.7rem;
+      font-variant-numeric: tabular-nums;
+      color: rgba(255, 255, 255, 0.45);
+      flex-shrink: 0;
+      white-space: nowrap;
+      justify-self: end;
+    }
+  </style>
+</head>
+<body>
+  <div class="bar" id="root">
+    <div class="progress-track"><div class="progress-fill" id="progress"></div></div>
+    <div class="bar-content">
+      <div class="track-text" id="trackText">
+        <span class="title" id="trackName">Not Playing</span>
+        <span class="separator">&middot;</span>
+        <span class="artist" id="artistName">Unknown Artist</span>
+      </div>
+      <div class="status" id="statusWrap">
+        <span class="status-dot stopped" id="statusDot"></span>
+        <span class="status-label" id="status">STOPPED</span>
+      </div>
+      <span class="time" id="timeDisplay"></span>
+    </div>
+  </div>
+  <script>
+    // Format seconds to M:SS
+    function formatTime(seconds) {
+      var m = Math.floor(seconds / 60);
+      var s = Math.floor(seconds % 60);
+      return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    window.onLoaded = function() {
+      var trackNameEl = document.getElementById('trackName');
+      var artistNameEl = document.getElementById('artistName');
+      var trackTextEl = document.getElementById('trackText');
+      var progressEl = document.getElementById('progress');
+      var timeDisplayEl = document.getElementById('timeDisplay');
+      var statusDotEl = document.getElementById('statusDot');
+      var statusEl = document.getElementById('status');
+      var statusWrapEl = document.getElementById('statusWrap');
+
+      var lastTitle = '';
+      var lastArtist = '';
+      var lastStatus = -1;
+
+      // Update track name and artist with fade transition
+      window.setTrackInfo = function(title, artist) {
+        if (title === lastTitle && artist === lastArtist) return;
+        lastTitle = title;
+        lastArtist = artist;
+
+        // Flash: instantly hide, then fade back in
+        trackTextEl.style.transition = 'none';
+        trackTextEl.style.opacity = '0';
+        void trackTextEl.offsetWidth;
+
+        trackNameEl.textContent = title || 'Not Playing';
+        artistNameEl.textContent = artist || 'Unknown Artist';
+
+        trackTextEl.style.transition = 'opacity 0.2s ease';
+        trackTextEl.style.opacity = '1';
+      };
+
+      // No album art in this theme
+      window.setAlbumArt = function() {};
+
+      // Update progress bar and time display
+      window.setProgress = function(currentTime, duration) {
+        if (duration > 0) {
+          var pct = (currentTime / duration) * 100;
+          progressEl.style.width = pct + '%';
+          timeDisplayEl.textContent = formatTime(currentTime) + ' / ' + formatTime(duration);
+        } else {
+          progressEl.style.width = '0%';
+          timeDisplayEl.textContent = '';
+        }
+      };
+
+      // Update playing status indicator
+      window.setPlayingStatus = function(status) {
+        if (lastStatus === status) return;
+        lastStatus = status;
+
+        statusDotEl.className = 'status-dot';
+        statusWrapEl.className = 'status';
+
+        if (status === 4) {
+          statusDotEl.classList.add('playing');
+          statusWrapEl.classList.add('playing');
+          statusEl.textContent = 'PLAYING';
+        } else if (status === 5) {
+          statusDotEl.classList.add('paused');
+          statusWrapEl.classList.add('paused');
+          statusEl.textContent = 'PAUSED';
+        } else {
+          statusDotEl.classList.add('stopped');
+          statusEl.textContent = 'STOPPED';
+        }
+      };
+    };
+  </script>
+  <script src="/script/functions.js"></script>
+</body>
+</html>

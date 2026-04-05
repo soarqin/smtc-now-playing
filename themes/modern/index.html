@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+  <title>Now Playing — Modern</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: transparent;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #root {
+      app-region: drag;
+    }
+
+    /* Entry animation */
+    .player-card {
+      max-width: 420px;
+      width: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 14px;
+      position: absolute;
+      left: 0;
+      top: 0;
+      align-self: flex-start;
+      animation: card-enter 0.4s ease-out both;
+    }
+
+    @keyframes card-enter {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Album art */
+    .album-art {
+      width: 80px;
+      height: 80px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+      display: none;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .album-art.visible {
+      display: block;
+    }
+
+    .album-art.changing {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+
+    /* Content area */
+    .content {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .track-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .text-wrapper {
+      overflow: hidden;
+    }
+
+    /* Title and artist */
+    .track-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      line-height: 1.3;
+      color: #fff;
+      white-space: nowrap;
+      width: fit-content;
+      min-width: 100%;
+    }
+
+    .artist {
+      font-size: 0.95rem;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.5);
+      white-space: nowrap;
+      width: fit-content;
+      min-width: 100%;
+    }
+
+    /* Scrolling text overflow */
+    @keyframes scroll-text {
+      0%   { transform: translateX(0); }
+      10%  { transform: translateX(0); }
+      50%  { transform: translateX(var(--scroll-distance)); }
+      60%  { transform: translateX(var(--scroll-distance)); }
+      100% { transform: translateX(0); }
+    }
+
+    .scrolling {
+      animation: scroll-text 10s linear infinite;
+    }
+
+    /* Song change crossfade */
+    .track-info.changing .track-title,
+    .track-info.changing .artist {
+      opacity: 0;
+      transition: none;
+    }
+
+    .track-title,
+    .artist {
+      transition: opacity 0.25s ease;
+    }
+
+    /* Progress section */
+    .progress-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 3px;
+      background: #222;
+      border-radius: 1.5px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: #fff;
+      border-radius: 1.5px;
+      transition: width 0.2s linear;
+    }
+
+    /* Time row */
+    .time-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      font-size: 0.7rem;
+      font-variant-numeric: tabular-nums;
+      color: #666;
+      letter-spacing: 0.02em;
+    }
+
+    .time-row #currentTime {
+      justify-self: start;
+    }
+
+    .time-row #totalTime {
+      justify-self: end;
+    }
+
+    /* Status indicator */
+    .status {
+      justify-self: center;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.6rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #555;
+    }
+
+    .status-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+
+    /* Playing state — white pulsing dot */
+    .status-dot.playing {
+      background: #fff;
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    .status.active {
+      color: #999;
+    }
+
+    /* Paused state — dim dot, no pulse */
+    .status-dot.paused {
+      background: #555;
+      box-shadow: none;
+      animation: none;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="player-card" id="root">
+    <img class="album-art" id="albumArt" />
+    <div class="content">
+      <div class="track-info" id="trackInfo">
+        <div class="text-wrapper"><h2 class="track-title" id="trackName">Not Playing</h2></div>
+        <div class="text-wrapper"><p class="artist" id="artistName">Unknown Artist</p></div>
+      </div>
+      <div class="progress-section">
+        <div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+        <div class="time-row">
+          <span id="currentTime"></span>
+          <div class="status" id="statusWrap">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="status">STOPPED</span>
+          </div>
+          <span id="totalTime"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.onLoaded = function() {
+      var trackNameEl  = document.getElementById('trackName');
+      var artistNameEl = document.getElementById('artistName');
+      var albumArtEl   = document.getElementById('albumArt');
+      var progressEl   = document.getElementById('progress');
+      var currentTimeEl = document.getElementById('currentTime');
+      var totalTimeEl   = document.getElementById('totalTime');
+      var statusEl      = document.getElementById('status');
+      var statusDotEl   = document.getElementById('statusDot');
+      var statusWrapEl  = document.getElementById('statusWrap');
+      var trackInfoEl   = document.getElementById('trackInfo');
+
+      var lastStatus = -1;
+      var lastTitle  = '';
+      var lastArtist = '';
+
+      // Format seconds to M:SS
+      function formatTime(seconds) {
+        var min = Math.floor(seconds / 60);
+        var sec = Math.floor(seconds % 60);
+        return min + ':' + (sec < 10 ? '0' : '') + sec;
+      }
+
+      // Check text overflow and apply scroll animation
+      function checkTextOverflow(el) {
+        el.classList.remove('scrolling');
+        el.style.removeProperty('--scroll-distance');
+        // Force reflow so scrollWidth recalculates without the animation
+        void el.offsetWidth;
+        if (el.scrollWidth > el.parentElement.clientWidth) {
+          var distance = el.parentElement.clientWidth - el.scrollWidth;
+          el.style.setProperty('--scroll-distance', distance + 'px');
+          el.classList.add('scrolling');
+        }
+      }
+
+      // Initial overflow check
+      checkTextOverflow(trackNameEl);
+      checkTextOverflow(artistNameEl);
+
+      window.addEventListener('resize', function() {
+        checkTextOverflow(trackNameEl);
+        checkTextOverflow(artistNameEl);
+      });
+
+      // --- API: Set track info ---
+      window.setTrackInfo = function(title, artist) {
+        if (lastTitle === title && lastArtist === artist) return;
+        lastTitle = title;
+        lastArtist = artist;
+
+        // Crossfade: hide text briefly
+        trackInfoEl.classList.add('changing');
+
+        setTimeout(function() {
+          trackNameEl.textContent = title || 'Not Playing';
+          artistNameEl.textContent = artist || 'Unknown Artist';
+          trackInfoEl.classList.remove('changing');
+
+          // Re-check overflow after content update
+          setTimeout(function() {
+            checkTextOverflow(trackNameEl);
+            checkTextOverflow(artistNameEl);
+          }, 0);
+        }, 30);
+      };
+
+      // --- API: Set album art ---
+      window.setAlbumArt = function(url) {
+        if (url) {
+          url = url.trim();
+          if (url !== '') {
+            // Crossfade: scale down then back up
+            albumArtEl.classList.add('changing');
+            setTimeout(function() {
+              albumArtEl.src = url + '?v=' + Date.now();
+              albumArtEl.classList.add('visible');
+              albumArtEl.classList.remove('changing');
+            }, 50);
+            return;
+          }
+        }
+        // No art — hide completely
+        albumArtEl.classList.remove('visible');
+        albumArtEl.classList.remove('changing');
+        albumArtEl.removeAttribute('src');
+      };
+
+      // --- API: Set progress ---
+      window.setProgress = function(currentTime, duration) {
+        if (duration <= 0) {
+          progressEl.style.width = '0%';
+          currentTimeEl.textContent = '';
+          totalTimeEl.textContent = '';
+          return;
+        }
+        var pct = Math.min(100, Math.max(0, (currentTime / duration) * 100));
+        progressEl.style.width = pct + '%';
+        currentTimeEl.textContent = formatTime(currentTime);
+        totalTimeEl.textContent = formatTime(duration);
+      };
+
+      // --- API: Set playing status ---
+      window.setPlayingStatus = function(status) {
+        if (lastStatus === status) return;
+        lastStatus = status;
+
+        // Reset dot classes
+        statusDotEl.className = 'status-dot';
+        statusWrapEl.classList.remove('active');
+
+        switch (status) {
+          case 4:
+            statusEl.textContent = 'PLAYING';
+            statusDotEl.classList.add('playing');
+            statusWrapEl.classList.add('active');
+            break;
+          case 5:
+            statusEl.textContent = 'PAUSED';
+            statusDotEl.classList.add('paused');
+            break;
+          default:
+            statusEl.textContent = 'STOPPED';
+            break;
+        }
+      };
+
+      // Set initial state
+      window.setPlayingStatus(0);
+    };
+  </script>
+  <script src="/script/functions.js"></script>
+</body>
+</html>

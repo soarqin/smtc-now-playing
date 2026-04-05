@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+  <title>Now Playing</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: transparent;
+      color: #fff;
+      overflow: hidden;
+      height: 100vh;
+    }
+    .container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: stretch;
+      app-region: drag;
+    }
+    .col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      padding: 10px 20px;
+      overflow-wrap: break-word;
+      word-break: break-word;
+      line-height: 1.6;
+      font-size: 1.1rem;
+      text-shadow:
+        -1px -1px 2px rgba(0, 0, 0, 0.6),
+         1px -1px 2px rgba(0, 0, 0, 0.6),
+        -1px  1px 2px rgba(0, 0, 0, 0.6),
+         1px  1px 2px rgba(0, 0, 0, 0.6),
+         0 0 8px rgba(0, 0, 0, 0.3);
+    }
+    .col-title {
+      justify-content: flex-end;
+      text-align: right;
+      font-weight: 600;
+    }
+    .col-artist {
+      justify-content: flex-start;
+      text-align: left;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    .sep {
+      width: 1px;
+      align-self: stretch;
+      background: rgba(255, 255, 255, 0.25);
+      flex-shrink: 0;
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="root">
+    <div class="col col-title"><span id="trackName">Not Playing</span></div>
+    <div class="sep"></div>
+    <div class="col col-artist"><span id="artistName">Unknown Artist</span></div>
+  </div>
+  <script>
+    window.onLoaded = function() {
+      var trackNameEl = document.getElementById('trackName');
+      var artistNameEl = document.getElementById('artistName');
+
+      window.setTrackInfo = function(title, artist) {
+        trackNameEl.textContent = title || 'Not Playing';
+        artistNameEl.textContent = artist || 'Unknown Artist';
+      };
+      window.setAlbumArt = function() {};
+      window.setProgress = function() {};
+      window.setPlayingStatus = function() {};
+    };
+  </script>
+  <script src="/script/functions.js"></script>
+</body>
+</html>

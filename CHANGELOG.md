@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-04-05
+
+### Added
+- New theme `modern`: dark minimal horizontal card with album art, progress bar, status indicator, entry/song-change animations
+- New theme `stream-bar`: wide low-height OBS bottom bar overlay with full-width background progress, no album art
+- New theme `minimal`: ultra-minimal two-column layout with title and artist separated by a full-height vertical line, fully transparent background, text shadow for light/dark background compatibility
+
 ## [1.1.0] - 2026-03-21
 
 ### Added
