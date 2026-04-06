@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"smtc-now-playing/internal/config"
 	"smtc-now-playing/internal/server"
@@ -407,6 +408,10 @@ func (me *Gui) events() {
 			me.srv.SetTheme(me.themeCombo.CurrentText())
 			config.Get().Theme = me.themeCombo.CurrentText()
 			config.Save()
+			// Refresh preview with cache-busting URL to load the new theme
+			if me.webViewWin != nil {
+				me.webViewWin.Navigate(fmt.Sprintf("http://127.0.0.1:%s?_t=%d", me.portEdit.Text(), time.Now().UnixMilli()))
+			}
 		}
 	})
 
