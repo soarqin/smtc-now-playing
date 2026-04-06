@@ -601,7 +601,7 @@ func (me *Gui) createWebView() {
 		return
 	}
 	me.webViewWin = webview.New(webview.Options{
-		URL:         "http://127.0.0.1:" + me.portEdit.Text(),
+		URL:         fmt.Sprintf("http://127.0.0.1:%s?_t=%d", me.portEdit.Text(), time.Now().UnixMilli()),
 		AlwaysOnTop: me.cbPreviewAlwaysOnTop.IsChecked(),
 		OnDestroy: func() {
 			if me.srv == nil {

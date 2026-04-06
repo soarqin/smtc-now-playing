@@ -8,8 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- New theme `modern`: dark minimal horizontal card with album art, progress bar, status indicator, entry/song-change animations
+- New theme `stream-bar`: wide low-height OBS bottom bar overlay with full-width background progress, no album art
+- New theme `minimal`: ultra-minimal two-column layout with title and artist separated by a full-height vertical line, fully transparent background, text shadow for light/dark background compatibility
 - Preview window resize: drag window edges to resize while keeping borderless appearance
 - Preview refresh on theme switch with cache reset
+
+### Fixed
+- Preview window using stale cached content on initial creation
 
 ### Changed
 - Preview max size is now derived from theme CSS constraints (max-width/max-height) instead of initial rendered size
