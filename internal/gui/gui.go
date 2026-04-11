@@ -156,6 +156,15 @@ func New(version string) *Gui {
 		cbShowPreviewWindow: cbShowPreviewWindow, cbPreviewAlwaysOnTop: cbPreviewAlwaysOnTop,
 		infoText: urlText,
 	}
+
+	// Register TaskbarCreated message before event handlers so the value
+	// is available when Wm() captures it for dispatch.
+	var err error
+	me.msgTaskbarCreated, err = win.RegisterWindowMessage("TaskbarCreated")
+	if err != nil {
+		panic(err)
+	}
+
 	me.events()
 	return me
 }
@@ -185,11 +194,6 @@ func (me *Gui) events() {
 			i++
 		}
 		me.themeCombo.SelectIndex(toSelect)
-
-		me.msgTaskbarCreated, err = win.RegisterWindowMessage("TaskbarCreated")
-		if err != nil {
-			panic(err)
-		}
 
 		notifyIcon, err = NewNotifyIcon(me.wnd.Hwnd())
 		if err != nil {

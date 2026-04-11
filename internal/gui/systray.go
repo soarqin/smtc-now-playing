@@ -11,8 +11,10 @@ import (
 const NotifyIconMsg = co.WM_APP + 1
 
 type NotifyIcon struct {
-	hwnd win.HWND
-	guid co.GUID
+	hwnd    win.HWND
+	guid    co.GUID
+	hIcon   win.HICON
+	tooltip string
 }
 
 func NewNotifyIcon(hwnd win.HWND) (*NotifyIcon, error) {
@@ -29,8 +31,21 @@ func NewNotifyIcon(hwnd win.HWND) (*NotifyIcon, error) {
 	return ni, nil
 }
 
+// AddAfterExplorerCrash re-creates the tray icon with all previously set
+// properties after Explorer restarts and destroys existing tray icons.
 func (ni *NotifyIcon) AddAfterExplorerCrash() {
-	win.Shell_NotifyIcon(co.NIM_ADD, ni.newData())
+	data := ni.newData()
+	data.UFlags |= co.NIF_MESSAGE
+	data.UCallbackMessage = NotifyIconMsg
+	if ni.hIcon != 0 {
+		data.UFlags |= co.NIF_ICON
+		data.HIcon = ni.hIcon
+	}
+	if ni.tooltip != "" {
+		data.UFlags |= co.NIF_TIP
+		data.SetSzTip(ni.tooltip)
+	}
+	win.Shell_NotifyIcon(co.NIM_ADD, data)
 }
 
 func (ni *NotifyIcon) Dispose() {
@@ -38,6 +53,7 @@ func (ni *NotifyIcon) Dispose() {
 }
 
 func (ni *NotifyIcon) SetTooltip(tooltip string) error {
+	ni.tooltip = tooltip
 	data := ni.newData()
 	data.UFlags |= co.NIF_TIP
 	data.SetSzTip(tooltip)
@@ -48,6 +64,7 @@ func (ni *NotifyIcon) SetTooltip(tooltip string) error {
 }
 
 func (ni *NotifyIcon) SetIcon(hIcon win.HICON) error {
+	ni.hIcon = hIcon
 	data := ni.newData()
 	data.UFlags |= co.NIF_ICON
 	data.HIcon = hIcon
