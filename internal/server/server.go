@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,14 +36,22 @@ type WebServer struct {
 	albumArtData        []byte
 
 	// Hot-reload file watcher
-	hotReload bool
-	watcher   *fsnotify.Watcher
+	hotReload    bool
+	watcher      *fsnotify.Watcher
+	hotReloadCh  chan struct{} // closed to signal the watcher goroutine to exit
+	hotReloadWG  sync.WaitGroup
+	hotReloadMu  sync.Mutex // protects watcher / hotReloadCh during Start/Stop
 
 	// Device selection
 	sessionsMutex          sync.Mutex
 	sessions               []smtc.SessionInfo
 	onSessionsChanged      func()
 	onSelectedDeviceChange func(string)
+
+	// shutdown flag — once true, broadcast / connection handling no-ops so
+	// late events from SMTC or pending goroutines can't touch torn-down state.
+	shuttingDown bool
+	shutdownMu   sync.RWMutex
 }
 
 type infoDetail struct {
@@ -147,16 +157,18 @@ func (srv *WebServer) handleInfoUpdate(data smtc.InfoData) {
 		Type string      `json:"type"`
 		Data *infoDetail `json:"data"`
 	}{Type: "info", Data: &info})
-	if err == nil {
-		infoStr := string(j)
-		srv.currentMutex.Lock()
-		if infoStr != srv.currentInfo {
-			srv.currentInfo = infoStr
-			srv.currentMutex.Unlock()
-			srv.broadcastMessage(j)
-		} else {
-			srv.currentMutex.Unlock()
-		}
+	if err != nil {
+		slog.Warn("failed to marshal info update", "err", err)
+		return
+	}
+	infoStr := string(j)
+	srv.currentMutex.Lock()
+	if infoStr != srv.currentInfo {
+		srv.currentInfo = infoStr
+		srv.currentMutex.Unlock()
+		srv.broadcastMessage(j)
+	} else {
+		srv.currentMutex.Unlock()
 	}
 }
 
@@ -174,16 +186,18 @@ func (srv *WebServer) handleProgressUpdate(data smtc.ProgressData) {
 		Type string          `json:"type"`
 		Data *progressDetail `json:"data"`
 	}{Type: "progress", Data: &progress})
-	if err == nil {
-		progressStr := string(j)
-		srv.currentMutex.Lock()
-		if progressStr != srv.currentProgress {
-			srv.currentProgress = progressStr
-			srv.currentMutex.Unlock()
-			srv.broadcastMessage(j)
-		} else {
-			srv.currentMutex.Unlock()
-		}
+	if err != nil {
+		slog.Warn("failed to marshal progress update", "err", err)
+		return
+	}
+	progressStr := string(j)
+	srv.currentMutex.Lock()
+	if progressStr != srv.currentProgress {
+		srv.currentProgress = progressStr
+		srv.currentMutex.Unlock()
+		srv.broadcastMessage(j)
+	} else {
+		srv.currentMutex.Unlock()
 	}
 }
 
@@ -199,11 +213,35 @@ func (srv *WebServer) removeWebSocketConnection(conn *gws.Conn) {
 	delete(srv.wsConnections, conn)
 }
 
+// broadcastMessage sends data to every currently-open WebSocket client.
+// It takes a *snapshot* of the connection set under the mutex, then writes
+// to each connection with the mutex released. This prevents a slow client
+// from blocking broadcasts to every other client and avoids the classic
+// "OnClose can't acquire the mutex while broadcast holds it" deadlock.
 func (srv *WebServer) broadcastMessage(data []byte) {
+	// Cheap shutdown short-circuit — avoid writes to connections that are
+	// being torn down.
+	srv.shutdownMu.RLock()
+	down := srv.shuttingDown
+	srv.shutdownMu.RUnlock()
+	if down {
+		return
+	}
+
 	srv.wsConnectionsMutex.Lock()
-	defer srv.wsConnectionsMutex.Unlock()
+	conns := make([]*gws.Conn, 0, len(srv.wsConnections))
 	for conn := range srv.wsConnections {
-		conn.WriteMessage(gws.OpcodeText, data)
+		conns = append(conns, conn)
+	}
+	srv.wsConnectionsMutex.Unlock()
+
+	for _, conn := range conns {
+		// gws.Conn.WriteMessage itself serializes concurrent writers on
+		// a single connection, so calling it from our broadcaster is
+		// safe even if another broadcaster goroutine is active.
+		if err := conn.WriteMessage(gws.OpcodeText, data); err != nil {
+			slog.Debug("websocket write failed", "err", err)
+		}
 	}
 }
 
@@ -256,7 +294,19 @@ func (srv *WebServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	go conn.ReadLoop()
+	// Wrap ReadLoop in a panic-recovery goroutine: a crash in the gws
+	// parser (e.g. on a malformed frame) must not take down the process
+	// or orphan this connection in wsConnections.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("websocket ReadLoop panic", "err", r)
+				srv.removeWebSocketConnection(conn)
+				_ = conn.WriteClose(1011, nil)
+			}
+		}()
+		conn.ReadLoop()
+	}()
 }
 
 func (srv *WebServer) handleAlbumArt(w http.ResponseWriter, r *http.Request) {
@@ -268,16 +318,75 @@ func (srv *WebServer) handleAlbumArt(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	if ct == "" {
+		// Defensive: we have bytes but no content-type. Guess something
+		// reasonable rather than serve an empty header.
+		ct = "application/octet-stream"
+	}
 	w.Header().Set("Content-Type", ct)
 	w.Write(data)
 }
 
+// safeThemePath resolves a request path against the theme directory while
+// rejecting attempts to escape via ".." / absolute paths / backslashes.
+// Returns the resolved absolute path and a boolean indicating validity.
+func safeThemePath(theme, urlPath string) (string, bool) {
+	return safeJoin(filepath.Join("themes", theme), urlPath)
+}
+
+// safeJoin joins base and rel, guaranteeing the resolved absolute path is
+// contained within the absolute form of base. Rejects empty bases.
+func safeJoin(base, rel string) (string, bool) {
+	if base == "" {
+		return "", false
+	}
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return "", false
+	}
+	// Strip a leading slash so filepath.Join treats the input as relative.
+	rel = strings.TrimLeft(rel, "/")
+	// Reject backslashes to avoid Windows-specific path traversal tricks
+	// like "..\foo" surviving URL-path cleaning.
+	if strings.ContainsRune(rel, '\\') {
+		return "", false
+	}
+	joined := filepath.Join(absBase, filepath.FromSlash(rel))
+	absJoined, err := filepath.Abs(joined)
+	if err != nil {
+		return "", false
+	}
+	// Ensure absJoined is either equal to absBase or a descendant of it.
+	// filepath.Rel returns ".." components only if the target escapes.
+	rp, err := filepath.Rel(absBase, absJoined)
+	if err != nil {
+		return "", false
+	}
+	if rp == ".." || strings.HasPrefix(rp, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return absJoined, true
+}
+
 func (srv *WebServer) handleStatic(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, fmt.Sprintf("themes/%s/%s", srv.currentTheme, r.URL.Path[1:]))
+	path, ok := safeThemePath(srv.currentTheme, r.URL.Path)
+	if !ok {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	http.ServeFile(w, r, path)
 }
 
 func (srv *WebServer) handleScript(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, r.URL.Path[1:])
+	// r.URL.Path is of the form "/script/<relative>"; strip the "/script"
+	// prefix and resolve inside the script directory only.
+	rel := strings.TrimPrefix(r.URL.Path, "/script")
+	path, ok := safeJoin("script", rel)
+	if !ok {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	http.ServeFile(w, r, path)
 }
 
 // startHotReload watches the given theme directory for file changes and
@@ -293,29 +402,48 @@ func (srv *WebServer) startHotReload(themePath string) {
 		w.Close()
 		return
 	}
+
+	srv.hotReloadMu.Lock()
 	srv.watcher = w
-	srv.waitGroup.Add(1)
+	srv.hotReloadCh = make(chan struct{})
+	stopCh := srv.hotReloadCh
+	srv.hotReloadMu.Unlock()
+
+	srv.hotReloadWG.Add(1)
 	go func() {
-		defer srv.waitGroup.Done()
+		defer srv.hotReloadWG.Done()
 		debounce := time.NewTimer(0)
 		<-debounce.C // drain initial tick
 		debounce.Stop()
 		for {
 			select {
-			case event, ok := <-srv.watcher.Events:
+			case <-stopCh:
+				// Shutdown requested — exit cleanly, dropping any pending
+				// debounce tick. We deliberately do NOT broadcast a final
+				// reload on the way out.
+				return
+			case event, ok := <-w.Events:
 				if !ok {
 					return
 				}
 				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
 					debounce.Reset(500 * time.Millisecond)
 				}
-			case _, ok := <-srv.watcher.Errors:
+			case _, ok := <-w.Errors:
 				if !ok {
 					return
 				}
 			case <-debounce.C:
-				srv.broadcastMessage([]byte(`{"type":"reload"}`))
-				slog.Info("theme reload triggered")
+				// Re-check shutdown flag under the lock so we don't
+				// broadcast against a connection set that Stop() is
+				// actively draining.
+				srv.shutdownMu.RLock()
+				down := srv.shuttingDown
+				srv.shutdownMu.RUnlock()
+				if !down {
+					srv.broadcastMessage([]byte(`{"type":"reload"}`))
+					slog.Info("theme reload triggered")
+				}
 			}
 		}
 	}()
@@ -339,20 +467,49 @@ func (srv *WebServer) Start() {
 }
 
 func (srv *WebServer) Stop() {
+	// Flip the shutdown flag first so in-flight SMTC callbacks can
+	// short-circuit before we start tearing down state they depend on.
+	srv.shutdownMu.Lock()
+	srv.shuttingDown = true
+	srv.shutdownMu.Unlock()
+
 	srv.currentMutex.Lock()
 	srv.currentInfo = ""
 	srv.currentProgress = ""
 	srv.currentSourceApp = ""
 	srv.currentMutex.Unlock()
+
+	// Stop hot-reload BEFORE closing connections — that way the debounce
+	// tick can't race with connection teardown.
+	srv.hotReloadMu.Lock()
+	stopCh := srv.hotReloadCh
+	watcher := srv.watcher
+	srv.hotReloadCh = nil
+	srv.watcher = nil
+	srv.hotReloadMu.Unlock()
+	if stopCh != nil {
+		close(stopCh)
+	}
+	if watcher != nil {
+		watcher.Close()
+	}
+	srv.hotReloadWG.Wait()
+
+	// Send close frames, then Close() each connection so ReadLoop exits.
 	srv.wsConnectionsMutex.Lock()
+	conns := make([]*gws.Conn, 0, len(srv.wsConnections))
 	for conn := range srv.wsConnections {
-		conn.WriteClose(1000, nil)
+		conns = append(conns, conn)
 	}
 	srv.wsConnectionsMutex.Unlock()
-	if srv.watcher != nil {
-		srv.watcher.Close()
-		srv.watcher = nil
+	for _, conn := range conns {
+		_ = conn.WriteClose(1000, nil)
+		// NetConn().Close() forces ReadLoop to return with an error.
+		if nc := conn.NetConn(); nc != nil {
+			_ = nc.Close()
+		}
 	}
+
 	srv.smtc.Stop()
 	srv.httpSrv.Close()
 	srv.waitGroup.Wait()
