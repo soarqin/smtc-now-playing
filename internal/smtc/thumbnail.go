@@ -264,8 +264,11 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 		return "", nil
 	}
 
-	// result is IRandomAccessStreamWithContentType* — QI for needed sub-interfaces.
+	// result is IRandomAccessStreamWithContentType* — release the outer
+	// reference on every path so we don't leak the stream itself when a
+	// QueryInterface / size call fails.
 	streamIUnk := (*ole.IUnknown)(result)
+	defer streamIUnk.Release()
 
 	// Step 3: Get stream size via IRandomAccessStream.get_Size.
 	rasItf, err := streamIUnk.QueryInterface(ole.NewGUID(guidIRandomAccessStream))
@@ -291,11 +294,15 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	}
 
 	// Step 5: Get content type via IContentTypeProvider.
+	// Use defer-based release so a panic inside getContentType() can't
+	// leak the interface pointer.
 	ctItf, err := streamIUnk.QueryInterface(ole.NewGUID(guidIContentTypeProvider))
 	if err == nil {
-		ct := (*iContentTypeProvider)(unsafe.Pointer(ctItf))
-		contentType, _ = ct.getContentType()
-		ctItf.Release()
+		func() {
+			defer ctItf.Release()
+			ct := (*iContentTypeProvider)(unsafe.Pointer(ctItf))
+			contentType, _ = ct.getContentType()
+		}()
 	}
 
 	// Step 6: Create IBuffer with sufficient capacity for the whole stream.

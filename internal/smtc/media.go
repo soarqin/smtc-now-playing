@@ -62,7 +62,9 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	if artistChanged && thumbData == nil {
 		s.currentArtist = escapedArtist
 		s.currentTitle = escapedTitle
-		// Cancel any pending retry from a previous song change.
+		// Cancel any pending retry from a previous song change and install
+		// a fresh one under timerMu so Stop() sees a consistent timer.
+		s.timerMu.Lock()
 		if s.thumbnailRetryTimer != nil {
 			s.thumbnailRetryTimer.Stop()
 		}
@@ -74,6 +76,7 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 				slog.Warn("SMTC event dropped", "type", "ThumbnailRetry", "dropped_total", s.droppedEvents.Load())
 			}
 		})
+		s.timerMu.Unlock()
 		return
 	}
 
@@ -109,7 +112,9 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 // always receives the new track info (with or without cover art).
 // Must be called from the smtc goroutine (via cmdChan).
 func (s *Smtc) retryThumbnailAndFireInfo(artist, title string, props *control.GlobalSystemMediaTransportControlsSessionMediaProperties) {
+	s.timerMu.Lock()
 	s.thumbnailRetryTimer = nil
+	s.timerMu.Unlock()
 	// If the song has already changed again, this retry is stale — discard it.
 	if s.currentArtist != artist || s.currentTitle != title {
 		return

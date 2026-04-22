@@ -3,6 +3,7 @@
 package smtc
 
 import (
+	"log/slog"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -22,7 +23,14 @@ var (
 	procRoUninitialize = combase.NewProc("RoUninitialize")
 )
 
+// asyncWaitTimeoutMillis caps how long waitForAsync will block on a single
+// WinRT async operation. 5s is generous for local SMTC queries — if it
+// takes longer than that SMTC is almost certainly stuck and we'd rather
+// return a clean timeout than hang the dedicated goroutine forever.
+const asyncWaitTimeoutMillis = 5000
+
 const waitInfinite = 0xFFFFFFFF
+const waitTimeoutResult = 0x00000102
 
 // roUninitialize calls RoUninitialize from combase.dll — the proper counterpart to
 // ole.RoInitialize. Must be called once for each successful RoInitialize call.
@@ -46,6 +54,13 @@ func waitForSingleObject(h uintptr) {
 	procWaitForSingleObject.Call(h, waitInfinite)
 }
 
+// waitForSingleObjectTimeout blocks up to ms milliseconds for h. Returns true
+// if h was signaled before the deadline, false on timeout.
+func waitForSingleObjectTimeout(h uintptr, ms uint32) bool {
+	ret, _, _ := procWaitForSingleObject.Call(h, uintptr(ms))
+	return ret != waitTimeoutResult
+}
+
 // closeHandle closes the Windows event object handle h.
 func closeHandle(h uintptr) {
 	procCloseHandle.Call(h)
@@ -64,9 +79,17 @@ func asyncOperationStatus(op *foundation.IAsyncOperation) foundation.AsyncStatus
 // handlerIID must be the IAsyncOperationCompletedHandler<T> IID matching op's result type.
 // Returns the raw result pointer (caller must cast) and the final AsyncStatus.
 // Replicates WaitForAsyncOperation<T> from c/smtc.cpp:96-121.
+//
+// If SetCompleted() fails or the wait times out, the async operation is
+// considered failed and we return (nil, AsyncStatusError) rather than
+// blocking the dedicated SMTC goroutine indefinitely.
 func waitForAsync(op *foundation.IAsyncOperation, handlerIID *ole.GUID) (unsafe.Pointer, foundation.AsyncStatus) {
 	if asyncOperationStatus(op) != foundation.AsyncStatusCompleted {
 		hEvent := createEvent()
+		if hEvent == 0 {
+			slog.Warn("waitForAsync: CreateEventW returned NULL")
+			return nil, foundation.AsyncStatusError
+		}
 		handler := foundation.NewAsyncOperationCompletedHandler(handlerIID, func(
 			_ *foundation.AsyncOperationCompletedHandler,
 			_ *foundation.IAsyncOperation,
@@ -74,10 +97,21 @@ func waitForAsync(op *foundation.IAsyncOperation, handlerIID *ole.GUID) (unsafe.
 		) {
 			setEvent(hEvent)
 		})
-		_ = op.SetCompleted(handler)
-		waitForSingleObject(hEvent)
+		if err := op.SetCompleted(handler); err != nil {
+			// Registration failed — nobody will ever signal hEvent, so
+			// bail out instead of blocking forever in waitForSingleObject.
+			slog.Debug("waitForAsync: SetCompleted failed", "err", err)
+			handler.Release()
+			closeHandle(hEvent)
+			return nil, foundation.AsyncStatusError
+		}
+		signaled := waitForSingleObjectTimeout(hEvent, asyncWaitTimeoutMillis)
 		closeHandle(hEvent)
 		handler.Release()
+		if !signaled {
+			slog.Warn("waitForAsync: timed out waiting for completion")
+			return nil, foundation.AsyncStatusError
+		}
 	}
 	status := asyncOperationStatus(op)
 	if status == foundation.AsyncStatusCompleted {
