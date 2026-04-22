@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Cover art occasionally disappearing right after a song switch: when a follow-up `info` event delivered the album art within the 300 ms track-change transition, the scheduled `setTimeout` in `script/functions.js` would fire later with its closure-captured (often empty) album-art URL and overwrite the freshly-applied one. Pending track info is now held in a shared variable that every follow-up event updates in place, so the timeout always applies the latest values.
+- Playback progress failing to reset to the start when replaying the same song: `handlePlaybackInfoChanged` fired `OnProgress` with only `Status` set, zeroing the client's `position`/`duration`/`lastUpdatedTime`/`playbackRate`. If the next 200 ms `readTimelineAndProgress` tick then dedup-matched (e.g. `currentPosition` was already 0), no fresh data was sent and the UI stayed stuck at `0:00/`. The handler now delegates to `readTimelineAndProgress`, guaranteeing a complete progress snapshot on every status transition.
+
 ## [1.2.2] - 2026-04-22
 
 ### Added

@@ -155,44 +155,27 @@ func (s *Smtc) clearMediaInfo() {
 	}
 }
 
-// handlePlaybackInfoChanged reads playback status from the current session and fires
-// OnProgress callback when the status changes. Position and duration are handled by
-// readTimelineAndProgress. Replicates C++ playback status handling at c/smtc.cpp.
+// handlePlaybackInfoChanged responds to WinRT PlaybackInfoChanged events by delegating
+// to readTimelineAndProgress, which reads the full timeline state and fires OnProgress
+// with complete data (position, duration, status, rate, lastUpdatedTime).
+//
+// Previously this function fired OnProgress with only Status set — all other fields
+// defaulted to zero. That clobbered the client's interpolation state (position=0,
+// duration=0, lastUpdatedTime=0) and, when the next 200ms readTimelineAndProgress
+// tick happened to dedup (same position/duration/status as server state — e.g. when
+// a user replays a song that was already at position 0), left the client stuck
+// showing "0:00/" until the song's position advanced by a whole second.
+//
+// Delegating to readTimelineAndProgress guarantees the client always receives a
+// consistent, complete snapshot on status transitions (play/pause/stop/replay).
 func (s *Smtc) handlePlaybackInfoChanged() {
 	if s.currentSession == nil {
 		return
 	}
-
-	playbackInfo, err := s.currentSession.GetPlaybackInfo()
-	if err != nil || playbackInfo == nil {
-		if err != nil {
-			slog.Debug("failed to get playback info", "err", err)
-		}
-		return
-	}
-
-	// Map WinRT GlobalSystemMediaTransportControlsSessionPlaybackStatus to our int constants.
-	// WinRT enum: Closed=0, Opened=1, Changing=2, Stopped=3, Playing=4, Paused=5.
-	// Our StatusClosed..StatusPaused constants match exactly.
-	status, err := playbackInfo.GetPlaybackStatus()
-	if err != nil {
-		slog.Debug("failed to get playback status", "err", err)
-		return
-	}
-
-	newStatus := int(status)
-	s.mu.Lock()
-	if newStatus == s.currentStatus {
-		s.mu.Unlock()
-		return
-	}
-	s.currentStatus = newStatus
-	s.mu.Unlock()
-
-	if s.opts.OnProgress != nil {
-		s.opts.OnProgress(ProgressData{
-			Status: newStatus,
-			// Position and Duration filled by readTimelineAndProgress.
-		})
-	}
+	// readTimelineAndProgress has its own dedup (position+duration+status) that
+	// fires whenever any of those change, which is exactly what we want on a
+	// playback-info event: the status has almost always changed, and even if it
+	// didn't (e.g. rate/shuffle/repeat tweaks), the next progress tick will pick
+	// the delta up within 200ms.
+	s.readTimelineAndProgress()
 }

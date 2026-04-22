@@ -92,6 +92,13 @@ document.addEventListener('DOMContentLoaded', function () {
     // Current track info for song-change transition detection
     var currentTitle = null;
     var currentArtist = null;
+    // Pending track info during a song-change transition. Any follow-up
+    // info event that arrives within the 300ms transition window (e.g.
+    // a late-arriving album art) updates this in place so the timeout
+    // below always applies the freshest values, never the stale ones
+    // captured when the transition was first scheduled.
+    var transitionTimer = null;
+    var pendingTrackInfo = null;
 
     // Apply a single status CSS class to the root <html> element
     function setStatusClass(className) {
@@ -149,19 +156,35 @@ document.addEventListener('DOMContentLoaded', function () {
                 var isSameTrack = (title === currentTitle && artist === currentArtist);
 
                 if (isFirstTrack || isSameTrack) {
-                    // First track or same track: update immediately without transition
-                    window.setTrackInfo(title, artist);
-                    window.setAlbumArt(albumArt);
+                    // First track or same track.
+                    if (transitionTimer !== null) {
+                        // A song-change transition is still pending. Overwrite
+                        // the pending payload with the latest values so the
+                        // timeout applies the freshest data (e.g. an album
+                        // art that arrived after the initial event). Avoid
+                        // touching the DOM here to not fight the fade-in.
+                        pendingTrackInfo = { title: title, artist: artist, albumArt: albumArt };
+                    } else {
+                        window.setTrackInfo(title, artist);
+                        window.setAlbumArt(albumArt);
+                    }
                 } else {
-                    // Song changed: add transitioning class, delay DOM update for CSS fade-out
+                    // Song changed: add transitioning class, delay DOM update for CSS fade-out.
                     document.documentElement.classList.add('transitioning');
-                    // Capture values for the closure
-                    var pendingTitle = title;
-                    var pendingArtist = artist;
-                    var pendingAlbumArt = albumArt;
-                    setTimeout(function () {
-                        window.setTrackInfo(pendingTitle, pendingArtist);
-                        window.setAlbumArt(pendingAlbumArt);
+                    // Store pending info in a closure-free variable so subsequent
+                    // same-track events arriving within the 300ms window update
+                    // it in place. Do not capture in the setTimeout's closure.
+                    pendingTrackInfo = { title: title, artist: artist, albumArt: albumArt };
+                    if (transitionTimer !== null) {
+                        clearTimeout(transitionTimer);
+                    }
+                    transitionTimer = setTimeout(function () {
+                        transitionTimer = null;
+                        if (pendingTrackInfo !== null) {
+                            window.setTrackInfo(pendingTrackInfo.title, pendingTrackInfo.artist);
+                            window.setAlbumArt(pendingTrackInfo.albumArt);
+                            pendingTrackInfo = null;
+                        }
                         document.documentElement.classList.remove('transitioning');
                     }, 300);
                 }
