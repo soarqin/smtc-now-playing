@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"smtc-now-playing/internal/config"
 	"smtc-now-playing/internal/smtc"
 )
 
@@ -235,5 +237,193 @@ func TestHandleCapabilities_ReturnsShape(t *testing.T) {
 		if _, ok := result[field]; !ok {
 			t.Errorf("capabilities response missing field %q", field)
 		}
+	}
+}
+
+// TestHandleControlSeek_ValidBody verifies that handleControlSeek returns HTTP 200
+// (body parsing succeeded) for a valid JSON body. The smtc call will return an
+// error (no session), but that results in 200 with success:false — NOT 400.
+func TestHandleControlSeek_ValidBody(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+	// Start the smtc goroutine so sendControl can complete with ErrNoSession.
+	_ = srv.smtc.Start()
+	defer srv.smtc.Stop()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/control/seek",
+		strings.NewReader(`{"position": 5000}`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+
+	srv.handleControlSeek(w, req)
+
+	if w.Code == http.StatusBadRequest {
+		t.Errorf("handleControlSeek valid body: got 400, want 200 (body parsed ok, smtc failure is 200+error)")
+	}
+	if w.Code != http.StatusOK {
+		t.Errorf("handleControlSeek valid body: got HTTP %d, want 200", w.Code)
+	}
+	// smtc returns ErrNoSession — body must be success:false with an error message.
+	var result map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("response not valid JSON: %v", err)
+	}
+	if result["success"] != false {
+		t.Errorf("success: got %v, want false (smtc has no session)", result["success"])
+	}
+	if result["error"] == "" || result["error"] == nil {
+		t.Errorf("error field: got %v, want non-empty error message", result["error"])
+	}
+}
+
+// TestHandleControlSeek_InvalidBody verifies that handleControlSeek returns
+// HTTP 400 with success:false and error message for invalid JSON body.
+func TestHandleControlSeek_InvalidBody(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/control/seek",
+		strings.NewReader(`not json`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+
+	srv.handleControlSeek(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("handleControlSeek invalid body: got HTTP %d, want 400", w.Code)
+	}
+	var result map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("response not valid JSON: %v", err)
+	}
+	if result["success"] != false {
+		t.Errorf("success: got %v, want false", result["success"])
+	}
+}
+
+// TestHandleControlShuffle_ValidBody verifies that handleControlShuffle returns
+// HTTP 200 for a valid JSON body.
+func TestHandleControlShuffle_ValidBody(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+	// Start the smtc goroutine so sendControl can complete with ErrNoSession.
+	_ = srv.smtc.Start()
+	defer srv.smtc.Stop()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/control/shuffle",
+		strings.NewReader(`{"active": true}`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+
+	srv.handleControlShuffle(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("handleControlShuffle valid body: got HTTP %d, want 200", w.Code)
+	}
+}
+
+// TestHandleControlShuffle_InvalidBody verifies that handleControlShuffle returns
+// HTTP 400 for an invalid JSON body.
+func TestHandleControlShuffle_InvalidBody(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/control/shuffle",
+		strings.NewReader(`bad`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+
+	srv.handleControlShuffle(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("handleControlShuffle invalid body: got HTTP %d, want 400", w.Code)
+	}
+}
+
+// TestHandleControlRepeat_ValidBody verifies that handleControlRepeat returns
+// HTTP 200 for a valid JSON body.
+func TestHandleControlRepeat_ValidBody(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+	// Start the smtc goroutine so sendControl can complete with ErrNoSession.
+	_ = srv.smtc.Start()
+	defer srv.smtc.Stop()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/control/repeat",
+		strings.NewReader(`{"mode": 1}`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+
+	srv.handleControlRepeat(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("handleControlRepeat valid body: got HTTP %d, want 200", w.Code)
+	}
+}
+
+// TestHandleControlRepeat_InvalidBody verifies that handleControlRepeat returns
+// HTTP 400 for an invalid JSON body.
+func TestHandleControlRepeat_InvalidBody(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/control/repeat",
+		strings.NewReader(`bad`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+
+	srv.handleControlRepeat(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("handleControlRepeat invalid body: got HTTP %d, want 400", w.Code)
+	}
+}
+
+// TestHandleControl_AllowRemote verifies that when ControlAllowRemote is true,
+// requests from non-localhost are accepted (HTTP 200, not 403).
+func TestHandleControl_AllowRemote(t *testing.T) {
+	srv := New("localhost", "0", "default", "", false)
+
+	// Temporarily enable remote control.
+	saved := config.Get().ControlAllowRemote
+	config.Get().ControlAllowRemote = true
+	defer func() { config.Get().ControlAllowRemote = saved }()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/control/play", nil)
+	req.RemoteAddr = "192.168.1.100:1234"
+	w := httptest.NewRecorder()
+
+	// Use stub action to isolate the guard logic from smtc internals.
+	srv.handleControl(w, req, func() error { return nil })
+
+	if w.Code != http.StatusOK {
+		t.Errorf("handleControl AllowRemote: got HTTP %d, want 200", w.Code)
+	}
+}
+
+// TestWriteJSON_ContentType verifies that writeJSON sets Content-Type to
+// application/json.
+func TestWriteJSON_ContentType(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeJSON(w, http.StatusOK, map[string]string{"key": "val"})
+
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type: got %q, want \"application/json\"", ct)
+	}
+}
+
+// TestWriteJSON_NonOKStatus verifies that writeJSON writes the supplied
+// non-200 status code to the response.
+func TestWriteJSON_NonOKStatus(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status: got %d, want 404", w.Code)
+	}
+}
+
+// TestWriteJSON_OKStatus verifies that writeJSON with status 200 produces
+// a 200 response (ResponseRecorder default, not double-written).
+func TestWriteJSON_OKStatus(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "yes"})
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want 200", w.Code)
 	}
 }
