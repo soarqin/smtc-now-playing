@@ -26,29 +26,53 @@ function setElementWidthsFromGETArgs() {
     }
 }
 
+// Exponential-backoff reconnect state. Reset to RECONNECT_MIN on successful
+// open so a transient server restart doesn't leave us stuck at the ceiling.
+const RECONNECT_MIN = 1000;
+const RECONNECT_MAX = 30000;
+let reconnectDelay = RECONNECT_MIN;
+
 function addWebSocket(wsUrl, onmessage) {
-    let ws = new WebSocket(wsUrl)
+    let ws = new WebSocket(wsUrl);
     ws.onopen = function () {
-        console.log("WebSocket connected to " + wsUrl)
-    }
+        console.log("WebSocket connected to " + wsUrl);
+        reconnectDelay = RECONNECT_MIN;
+    };
     ws.onmessage = function (event) {
-        onmessage(event)
-    }
+        try {
+            onmessage(event);
+        } catch (e) {
+            // A malformed server message or a theme bug must not break
+            // the rest of the socket lifecycle; log and keep running.
+            console.error("WebSocket onmessage handler threw:", e);
+        }
+    };
     ws.onerror = function (error) {
-        console.error("WebSocket " + wsUrl + " error:", error)
-    }
+        console.error("WebSocket " + wsUrl + " error:", error);
+    };
     ws.onclose = function (event) {
-        console.log("WebSocket closed, reconnecting in 1 second...")
+        const delay = reconnectDelay;
+        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX);
+        console.log("WebSocket closed, reconnecting in " + delay + "ms...");
         setTimeout(() => {
-            addWebSocket(wsUrl, onmessage)
-        }, 1000)
-    }
-    return ws
+            addWebSocket(wsUrl, onmessage);
+        }, delay);
+    };
+    return ws;
 }
 
 document.addEventListener('DOMContentLoaded', function () {
     setElementWidthsFromGETArgs();
-    window.onLoaded();
+    // Themes are expected to define window.onLoaded, but we guard against a
+    // missing definition so a broken / simplified theme file doesn't abort
+    // the rest of the bootstrap code (WebSocket connection, root-size probe).
+    if (typeof window.onLoaded === 'function') {
+        try {
+            window.onLoaded();
+        } catch (e) {
+            console.error("theme onLoaded threw:", e);
+        }
+    }
 
     // Parse hideDelay URL param: ms of grace period before idle class (default 5000)
     var params = new URLSearchParams(window.location.search);
@@ -105,7 +129,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = protocol + '//' + window.location.host + '/ws'
     addWebSocket(wsUrl, function (event) {
-        const data = JSON.parse(event.data)
+        let data;
+        try {
+            data = JSON.parse(event.data);
+        } catch (e) {
+            console.error("malformed WebSocket message:", e, event.data);
+            return;
+        }
+        if (!data || typeof data.type !== 'string') {
+            return;
+        }
         switch (data.type) {
             case 'info': {
                 var title = data.data.title;
