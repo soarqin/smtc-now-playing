@@ -161,10 +161,14 @@ func New(version string) *Gui {
 
 	// Register TaskbarCreated message before event handlers so the value
 	// is available when Wm() captures it for dispatch.
+	// If registration fails (extremely unlikely), log and continue — the
+	// only feature we lose is auto-restoring the tray icon after an
+	// Explorer crash, which is never worth bringing the whole app down.
 	var err error
 	me.msgTaskbarCreated, err = win.RegisterWindowMessage("TaskbarCreated")
 	if err != nil {
-		panic(err)
+		slog.Warn("RegisterWindowMessage(TaskbarCreated) failed; tray icon will not auto-restore after Explorer restart", "err", err)
+		me.msgTaskbarCreated = 0
 	}
 
 	me.events()
@@ -304,6 +308,11 @@ func (me *Gui) events() {
 				if len(sessions) > 0 {
 					deviceMenu, dErr := win.CreatePopupMenu()
 					if dErr == nil {
+						// Track whether we successfully attached deviceMenu
+						// to popup. If we didn't, we must DestroyMenu it
+						// ourselves — popup.DestroyMenu only cascades to
+						// submenus that are actually attached.
+						attached := false
 						currentDevice := config.Get().SelectedDevice
 						for i, sess := range sessions {
 							itemState := co.MFS_UNCHECKED
@@ -335,6 +344,12 @@ func (me *Gui) events() {
 							dmi.SetCbSize()
 							popup.InsertMenuItemByPos(nextPos, dmi)
 							nextPos++
+							attached = true
+						}
+						if !attached {
+							// UTF16 conversion failed — detach the submenu
+							// we built so it's not leaked as an orphan HMENU.
+							deviceMenu.DestroyMenu()
 						}
 					}
 				}
