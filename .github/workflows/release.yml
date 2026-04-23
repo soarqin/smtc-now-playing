@@ -36,11 +36,11 @@ jobs:
           $version = "${{ steps.version.outputs.version }}"
           $changelogPath = "CHANGELOG.md"
           $content = Get-Content $changelogPath -Raw
-          
+
           # Extract section for this version using Singleline flag for dotall mode
           $pattern = "## \[$version\].*?(?=## \[|$)"
           $match = [System.Text.RegularExpressions.Regex]::Match($content, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-          
+
           if ($match.Success) {
             $section = $match.Value.Trim()
             # Remove the version header line to get just the content
@@ -49,10 +49,14 @@ jobs:
           } else {
             $section = "See CHANGELOG.md for details"
           }
-          
-          # Escape for GitHub Actions
-          $section = $section -replace "`n", "%0A"
-          echo "body=$section" >> $env:GITHUB_OUTPUT
+
+          # Emit as a multi-line output using the heredoc-style delimiter syntax.
+          # The %0A escape only worked with the deprecated ::set-output:: command;
+          # with $GITHUB_OUTPUT it would be rendered as a literal in the release body.
+          $delimiter = "EOF_$(New-Guid)"
+          "body<<$delimiter" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $section          | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $delimiter        | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Create release archive
         run: |
