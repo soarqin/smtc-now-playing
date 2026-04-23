@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - Unreleased
+
+### Breaking Changes
+- WebSocket protocol upgraded to v2: envelope format `{type, v:2, id, ts, data}`, hello handshake on connect, bidirectional control commands with ack, server heartbeat
+- Config file format changed to nested structure; existing v1 flat configs are auto-migrated on first run
+- SMTC event callback API replaced with channel-based `Subscribe()`/`Unsubscribe()` fan-out
+- Binary layout changed: `cmd/smtc-now-playing/` and `cmd/smtc-test/` (was root `main.go` + `smtc_testmain.go`)
+- `smtc_test` build tag removed; use `go build ./cmd/smtc-test` instead
+
+### Added
+- `--headless` flag for no-GUI server-only mode
+- GitHub Actions CI workflow (build, test, lint, vulncheck on every PR)
+- `go tool` directive pins `golangci-lint` and `govulncheck` in `go.mod`
+- `internal/domain` package: shared data types (InfoData, ProgressData, SessionInfo, etc.)
+- `internal/wsproto` package: WebSocket v2 protocol types and helpers
+- `internal/version` package: app version exported for both binaries
+- Per-subscriber drop counter for event fan-out
+- Sentinel errors: `smtc.ErrNoSession`, `config.ErrInvalidConfig`, `server.ErrServerShutdown`
+
+### Changed
+- All packages: context.Context propagation for cancellable/blocking operations
+- Error handling: all errors wrapped with `fmt.Errorf("%w", err)`, `errors.Is`/`errors.As` used throughout
+- Logging: `log/slog` enriched with subsystem label per package
+- HTTP server: timeouts set (ReadTimeout, WriteTimeout, IdleTimeout), graceful shutdown via `context.Background()`-derived timeout
+- Server: hub actor pattern replaces 5 mutexes; zero sync.Mutex in server non-test code
+- Server: Go 1.22 stdlib routing (`GET /path/{wildcard}` patterns)
+- Config: constructor injection replaces global singleton (`config.Get()` removed)
+- SMTC goroutine: `Run(ctx)` replaces `Start()`/`Stop()` lifecycle
+
+### Removed
+- `config.Get()` global singleton
+- SMTC 4-callback `Options` struct (OnInfo, OnProgress, OnSessionsChanged, OnSelectedDeviceChange)
+- `smtc_testmain.go` at root (replaced by `cmd/smtc-test/`)
+- Root `main.go` and `version.go` (moved to `cmd/smtc-now-playing/`)
+
+### Fixed
+- Silent error swallowing in WinRT async operations (now wrapped with `fmt.Errorf`)
+- Previously dropped SMTC events now logged with per-subscriber drop counter
+
+### Migration Notes
+- WebSocket clients must update to v2 protocol (envelope format changed)
+- Config files: existing flat JSON is auto-migrated on first launch; no manual edit needed
+- Themes: HTML/CSS unchanged; `functions.js` updated automatically with the binary
+- Installer: same binary name (`SmtcNowPlaying.exe`), same AppId GUID
+
 ## [Unreleased]
 
 ### Fixed
