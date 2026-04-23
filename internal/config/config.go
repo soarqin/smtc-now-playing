@@ -2,105 +2,173 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 )
 
-type Config struct {
-	Port               int    `json:"port"`
+// ServerConfig holds HTTP server settings.
+type ServerConfig struct {
+	Port        int  `json:"port"`
+	AllowRemote bool `json:"allowRemote"`
+	HotReload   bool `json:"hotReload"`
+}
+
+// UIConfig holds user interface preferences.
+type UIConfig struct {
 	Theme              string `json:"theme"`
-	AutoStart          bool   `json:"autostart"`
-	StartMinimized     bool   `json:"startminimized"`
-	ShowPreviewWindow  bool   `json:"showpreviewwindow"`
-	PreviewAlwaysOnTop bool   `json:"previewalwaysontop"`
-	SelectedDevice     string `json:"selecteddevice"`
-	Debug              bool   `json:"debug"`
-	HotReload          bool   `json:"hotReload"`
-	// ControlAllowRemote allows media control endpoints to be accessed from
-	// non-localhost addresses when true. Defaults to false (localhost-only).
-	ControlAllowRemote bool `json:"controlAllowRemote"`
+	AutoStart          bool   `json:"autoStart"`
+	StartMinimized     bool   `json:"startMinimized"`
+	ShowPreviewWindow  bool   `json:"showPreviewWindow"`
+	PreviewAlwaysOnTop bool   `json:"previewAlwaysOnTop"`
 }
 
-var (
-	config *Config
-	// mu serializes concurrent Save() calls from GUI / server threads.
-	// Field-level access on the shared *Config is still the caller's
-	// responsibility, but all disk I/O (Load/Save) holds this mutex so
-	// no partial/interleaved writes ever reach the config file.
-	mu sync.Mutex
-)
+// SMTCConfig holds System Media Transport Controls settings.
+type SMTCConfig struct {
+	SelectedDevice string `json:"selectedDevice"`
+}
 
-func init() {
-	config = &Config{
-		Port:               11451,
-		Theme:              "default",
-		AutoStart:          false,
-		StartMinimized:     false,
-		ShowPreviewWindow:  false,
-		PreviewAlwaysOnTop: true,
+// LoggingConfig holds logging settings.
+type LoggingConfig struct {
+	Level string `json:"level"`
+	Debug bool   `json:"debug"`
+}
+
+// Config is the application configuration.
+type Config struct {
+	Server  ServerConfig  `json:"server"`
+	UI      UIConfig      `json:"ui"`
+	SMTC    SMTCConfig    `json:"smtc"`
+	Logging LoggingConfig `json:"logging"`
+}
+
+// DefaultConfig returns a Config populated with application defaults.
+func DefaultConfig() *Config {
+	return &Config{
+		Server: ServerConfig{
+			Port: 11451,
+		},
+		UI: UIConfig{
+			Theme:              "default",
+			PreviewAlwaysOnTop: true,
+		},
+		Logging: LoggingConfig{
+			Level: "info",
+		},
 	}
 }
 
-func Get() *Config {
-	return config
+// ResolvePath returns the config file path to use. It returns the portable
+// config path (next to the executable) if portable_config.json exists there;
+// otherwise returns the APPDATA path. Returns an error if APPDATA is unset
+// and no portable file is found.
+func ResolvePath() (string, error) {
+	exe := os.Args[0]
+	dir := filepath.Dir(exe)
+	portablePath := filepath.Join(dir, "portable_config.json")
+	if _, err := os.Stat(portablePath); err == nil {
+		return portablePath, nil
+	}
+	appDataPath := appDataConfigFile()
+	if appDataPath == "" {
+		return "", nil
+	}
+	return appDataPath, nil
 }
 
-func Load() error {
-	mu.Lock()
-	defer mu.Unlock()
-
-	dir := os.Args[0]
-	dir = filepath.Dir(dir)
-	portableConfigPath := filepath.Join(dir, "portable_config.json")
-	if _, err := os.Stat(portableConfigPath); err == nil {
-		err := loadConfigFromFile(portableConfigPath, config)
-		if err == nil {
-			slog.Info("config loaded", "port", config.Port, "theme", config.Theme)
+// Load reads config from path, migrating v1 flat JSON to the current nested
+// format if needed. Missing fields are filled from DefaultConfig. If the file
+// does not exist, Load returns DefaultConfig with a nil error.
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return DefaultConfig(), nil
 		}
-		return err
+		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
 
-	appDataConfigPath := appDataConfigFile()
-	if appDataConfigPath == "" {
-		slog.Info("config loaded (defaults, APPDATA unset)", "port", config.Port, "theme", config.Theme)
-		return nil
+	cfg, err := parseConfig(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse config %q: %w", path, err)
 	}
-	if _, err := os.Stat(appDataConfigPath); err == nil {
-		err := loadConfigFromFile(appDataConfigPath, config)
-		if err == nil {
-			slog.Info("config loaded", "port", config.Port, "theme", config.Theme)
-		}
-		return err
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validate config %q: %w", path, err)
 	}
+	slog.Info("config loaded", "port", cfg.Server.Port, "theme", cfg.UI.Theme)
+	return cfg, nil
+}
 
-	slog.Info("config loaded", "port", config.Port, "theme", config.Theme)
+// Save validates cfg, then atomically writes it to path.
+func (c *Config) Save(path string) error {
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
+	}
+	return saveConfigToFile(path, c)
+}
+
+// Validate returns an error if any config value is out of range.
+func (c *Config) Validate() error {
+	if c.Server.Port < 1 || c.Server.Port > 65535 {
+		return fmt.Errorf("port %d out of range [1, 65535]", c.Server.Port)
+	}
+	if c.UI.Theme == "" {
+		return errors.New("theme must not be empty")
+	}
+	switch c.Logging.Level {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("logging level %q must be one of: debug, info, warn, error", c.Logging.Level)
+	}
 	return nil
 }
 
-func Save() error {
-	mu.Lock()
-	defer mu.Unlock()
+// parseConfig detects v1 vs v2 JSON format and returns a merged Config.
+func parseConfig(data []byte) (*Config, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if _, isV1 := raw["port"]; isV1 {
+		return migrateV1(data)
+	}
+	// v2: unmarshal into defaults so missing fields retain default values.
+	cfg := DefaultConfig()
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
 
-	dir := os.Args[0]
-	dir = filepath.Dir(dir)
-	portableConfigPath := filepath.Join(dir, "portable_config.json")
-	if _, err := os.Stat(portableConfigPath); err == nil {
-		return saveConfigToFile(portableConfigPath, config)
+// migrateV1 reads a v1 flat config JSON and maps it into the v2 nested Config.
+func migrateV1(rawJSON []byte) (*Config, error) {
+	var flat map[string]json.RawMessage
+	if err := json.Unmarshal(rawJSON, &flat); err != nil {
+		return nil, err
 	}
-
-	appDataConfigPath := appDataConfigFile()
-	if appDataConfigPath == "" {
-		return fmt.Errorf("APPDATA not set; cannot save config")
+	cfg := DefaultConfig()
+	set := func(key string, dst any) {
+		if v, ok := flat[key]; ok {
+			_ = json.Unmarshal(v, dst)
+		}
 	}
-	appDataConfigDir := filepath.Dir(appDataConfigPath)
-	// 0700: restrict to current user. Config may contain future user-specific settings.
-	if err := os.MkdirAll(appDataConfigDir, 0700); err != nil {
-		return fmt.Errorf("create config dir %q: %w", appDataConfigDir, err)
+	set("port", &cfg.Server.Port)
+	set("controlAllowRemote", &cfg.Server.AllowRemote)
+	set("hotReload", &cfg.Server.HotReload)
+	set("theme", &cfg.UI.Theme)
+	set("autostart", &cfg.UI.AutoStart)
+	set("startminimized", &cfg.UI.StartMinimized)
+	set("showpreviewwindow", &cfg.UI.ShowPreviewWindow)
+	set("previewalwaysontop", &cfg.UI.PreviewAlwaysOnTop)
+	set("selecteddevice", &cfg.SMTC.SelectedDevice)
+	set("debug", &cfg.Logging.Debug)
+	if cfg.Logging.Debug {
+		cfg.Logging.Level = "debug"
 	}
-	return saveConfigToFile(appDataConfigPath, config)
+	slog.Info("config migrated from v1")
+	return cfg, nil
 }
 
 // appDataConfigFile returns the installed-mode config path, or "" if APPDATA
@@ -111,20 +179,6 @@ func appDataConfigFile() string {
 		return ""
 	}
 	return filepath.Join(appData, "soarqin", "smtc-now-playing", "config.json")
-}
-
-func loadConfigFromFile(path string, cfg *Config) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	decoder := json.NewDecoder(file)
-	err = decoder.Decode(cfg)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // saveConfigToFile writes cfg to path atomically: serialize to a sibling

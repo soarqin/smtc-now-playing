@@ -6,238 +6,296 @@ import (
 	"testing"
 )
 
-// TestLoadConfig_ValidPortableConfig verifies that loadConfigFromFile correctly
-// parses a well-formed JSON file and overwrites the supplied Config fields.
-func TestLoadConfig_ValidPortableConfig(t *testing.T) {
+// TestDefaultConfig verifies that DefaultConfig returns the correct defaults.
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Server.Port != 11451 {
+		t.Errorf("Server.Port: got %d, want 11451", cfg.Server.Port)
+	}
+	if cfg.UI.Theme != "default" {
+		t.Errorf("UI.Theme: got %q, want \"default\"", cfg.UI.Theme)
+	}
+	if !cfg.UI.PreviewAlwaysOnTop {
+		t.Error("UI.PreviewAlwaysOnTop: got false, want true")
+	}
+	if cfg.Logging.Level != "info" {
+		t.Errorf("Logging.Level: got %q, want \"info\"", cfg.Logging.Level)
+	}
+	// All boolean flags must default to false.
+	if cfg.Server.AllowRemote {
+		t.Error("Server.AllowRemote: got true, want false")
+	}
+	if cfg.Server.HotReload {
+		t.Error("Server.HotReload: got true, want false")
+	}
+	if cfg.UI.AutoStart {
+		t.Error("UI.AutoStart: got true, want false")
+	}
+	if cfg.UI.StartMinimized {
+		t.Error("UI.StartMinimized: got true, want false")
+	}
+	if cfg.UI.ShowPreviewWindow {
+		t.Error("UI.ShowPreviewWindow: got true, want false")
+	}
+	if cfg.Logging.Debug {
+		t.Error("Logging.Debug: got true, want false")
+	}
+}
+
+// TestLoad_EmptyJSON verifies that Load with an empty JSON object {} returns
+// DefaultConfig values unchanged.
+func TestLoad_EmptyJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 
-	data := `{"port": 12345, "theme": "custom", "autostart": true, "debug": true}`
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		t.Fatalf("failed to write test config: %v", err)
+	if err := os.WriteFile(path, []byte(`{}`), 0644); err != nil {
+		t.Fatalf("write test config: %v", err)
 	}
 
-	cfg := &Config{Port: 11451, Theme: "default"}
-	if err := loadConfigFromFile(path, cfg); err != nil {
-		t.Fatalf("loadConfigFromFile returned unexpected error: %v", err)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
 	}
-
-	if cfg.Port != 12345 {
-		t.Errorf("Port: got %d, want 12345", cfg.Port)
+	if cfg.Server.Port != 11451 {
+		t.Errorf("Server.Port: got %d, want 11451 (default)", cfg.Server.Port)
 	}
-	if cfg.Theme != "custom" {
-		t.Errorf("Theme: got %q, want \"custom\"", cfg.Theme)
-	}
-	if !cfg.AutoStart {
-		t.Errorf("AutoStart: got false, want true")
-	}
-	if !cfg.Debug {
-		t.Errorf("Debug: got false, want true")
+	if cfg.UI.Theme != "default" {
+		t.Errorf("UI.Theme: got %q, want \"default\"", cfg.UI.Theme)
 	}
 }
 
-// TestLoadConfig_MissingFile_UsesDefaults verifies that when no config file
-// exists the Config struct is left untouched (defaults are preserved).
-func TestLoadConfig_MissingFile_UsesDefaults(t *testing.T) {
+// TestLoad_MissingFile_ReturnsDefaults verifies that Load returns DefaultConfig
+// without error when the file does not exist.
+func TestLoad_MissingFile_ReturnsDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "missing.json")
 
-	cfg := &Config{
-		Port:  11451,
-		Theme: "default",
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load missing file: unexpected error: %v", err)
 	}
-
-	// Attempting to load a non-existent file must return an error.
-	err := loadConfigFromFile(path, cfg)
-	if err == nil {
-		t.Fatal("expected error for missing file, got nil")
+	if cfg.Server.Port != 11451 {
+		t.Errorf("Server.Port: got %d, want 11451", cfg.Server.Port)
 	}
-
-	// The config must not have been modified — defaults remain.
-	if cfg.Port != 11451 {
-		t.Errorf("Port: got %d, want default 11451", cfg.Port)
-	}
-	if cfg.Theme != "default" {
-		t.Errorf("Theme: got %q, want default \"default\"", cfg.Theme)
+	if cfg.UI.Theme != "default" {
+		t.Errorf("UI.Theme: got %q, want \"default\"", cfg.UI.Theme)
 	}
 }
 
-// TestLoadConfig_MalformedJSON_ReturnsError verifies that malformed JSON
-// causes loadConfigFromFile to return a non-nil error.
-func TestLoadConfig_MalformedJSON_ReturnsError(t *testing.T) {
+// TestLoad_V2ValidJSON verifies Load parses a well-formed v2 JSON file.
+func TestLoad_V2ValidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	data := `{
+		"server": {"port": 12345, "hotReload": true},
+		"ui": {"theme": "mini", "autoStart": true},
+		"logging": {"level": "debug", "debug": true}
+	}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatalf("write test config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if cfg.Server.Port != 12345 {
+		t.Errorf("Server.Port: got %d, want 12345", cfg.Server.Port)
+	}
+	if !cfg.Server.HotReload {
+		t.Error("Server.HotReload: got false, want true")
+	}
+	if cfg.UI.Theme != "mini" {
+		t.Errorf("UI.Theme: got %q, want \"mini\"", cfg.UI.Theme)
+	}
+	if !cfg.UI.AutoStart {
+		t.Error("UI.AutoStart: got false, want true")
+	}
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("Logging.Level: got %q, want \"debug\"", cfg.Logging.Level)
+	}
+	if !cfg.Logging.Debug {
+		t.Error("Logging.Debug: got false, want true")
+	}
+}
+
+// TestLoad_V2PartialJSON verifies that fields absent from the JSON file retain
+// their default values after loading.
+func TestLoad_V2PartialJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	data := `{"server": {"port": 9999}}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatalf("write test config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if cfg.Server.Port != 9999 {
+		t.Errorf("Server.Port: got %d, want 9999", cfg.Server.Port)
+	}
+	// Fields not in JSON must keep defaults.
+	if cfg.UI.Theme != "default" {
+		t.Errorf("UI.Theme: got %q, want \"default\" (default)", cfg.UI.Theme)
+	}
+	if !cfg.UI.PreviewAlwaysOnTop {
+		t.Error("UI.PreviewAlwaysOnTop: got false, want true (default)")
+	}
+	if cfg.Logging.Level != "info" {
+		t.Errorf("Logging.Level: got %q, want \"info\" (default)", cfg.Logging.Level)
+	}
+}
+
+// TestLoad_MalformedJSON verifies that malformed JSON causes Load to return
+// a non-nil error.
+func TestLoad_MalformedJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.json")
 
 	if err := os.WriteFile(path, []byte(`{invalid json`), 0644); err != nil {
-		t.Fatalf("failed to write bad config file: %v", err)
+		t.Fatalf("write bad config: %v", err)
 	}
 
-	cfg := &Config{}
-	err := loadConfigFromFile(path, cfg)
+	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
 }
 
-// TestConfigDefaults verifies that the package-level config variable is
-// initialized with the correct default values by init().
-func TestConfigDefaults(t *testing.T) {
-	// config is set by init() — verify the known default values.
-	if config.Port != 11451 {
-		t.Errorf("Port: got %d, want 11451", config.Port)
-	}
-	if config.Theme != "default" {
-		t.Errorf("Theme: got %q, want \"default\"", config.Theme)
-	}
-	if !config.PreviewAlwaysOnTop {
-		t.Errorf("PreviewAlwaysOnTop: got false, want true")
-	}
-	// All other bools should be false.
-	if config.AutoStart {
-		t.Errorf("AutoStart: got true, want false")
-	}
-	if config.StartMinimized {
-		t.Errorf("StartMinimized: got true, want false")
-	}
-	if config.ShowPreviewWindow {
-		t.Errorf("ShowPreviewWindow: got true, want false")
-	}
-	if config.Debug {
-		t.Errorf("Debug: got true, want false")
-	}
-	if config.HotReload {
-		t.Errorf("HotReload: got true, want false")
-	}
-	if config.ControlAllowRemote {
-		t.Errorf("ControlAllowRemote: got true, want false")
-	}
-}
-
-// TestLoadConfig_PartialJSON verifies that loadConfigFromFile merges JSON
-// fields into an existing Config, leaving unspecified fields unchanged.
-func TestLoadConfig_PartialJSON(t *testing.T) {
+// TestLoad_UnknownFields verifies that unknown JSON keys are silently ignored.
+func TestLoad_UnknownFields(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 
-	data := `{"port": 9999}`
+	data := `{"server": {"port": 9999}, "unknownKey": "ignored", "anotherUnknown": 42}`
 	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		t.Fatalf("failed to write test config: %v", err)
+		t.Fatalf("write test config: %v", err)
 	}
 
-	cfg := &Config{Port: 11451, Theme: "existing-theme"}
-	if err := loadConfigFromFile(path, cfg); err != nil {
-		t.Fatalf("loadConfigFromFile returned unexpected error: %v", err)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
 	}
-
-	if cfg.Port != 9999 {
-		t.Errorf("Port: got %d, want 9999", cfg.Port)
-	}
-	if cfg.Theme != "existing-theme" {
-		t.Errorf("Theme: got %q, want \"existing-theme\" (unchanged)", cfg.Theme)
+	if cfg.Server.Port != 9999 {
+		t.Errorf("Server.Port: got %d, want 9999", cfg.Server.Port)
 	}
 }
 
-// TestLoadConfig_RoundTrip verifies that a Config with non-default values
-// can be saved and loaded back with all fields intact.
-func TestLoadConfig_RoundTrip(t *testing.T) {
+// TestLoad_V2RoundTrip verifies that Save + Load preserves all fields.
+func TestLoad_V2RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 
-	original := Config{
-		Port:               9876,
-		Theme:              "custom-theme",
-		AutoStart:          true,
-		StartMinimized:     true,
-		ShowPreviewWindow:  true,
-		PreviewAlwaysOnTop: false,
-		SelectedDevice:     "Spotify.exe",
-		Debug:              true,
-		HotReload:          true,
-		ControlAllowRemote: true,
+	original := &Config{
+		Server: ServerConfig{
+			Port:        9876,
+			AllowRemote: true,
+			HotReload:   true,
+		},
+		UI: UIConfig{
+			Theme:              "custom-theme",
+			AutoStart:          true,
+			StartMinimized:     true,
+			ShowPreviewWindow:  true,
+			PreviewAlwaysOnTop: false,
+		},
+		SMTC: SMTCConfig{
+			SelectedDevice: "Spotify.exe",
+		},
+		Logging: LoggingConfig{
+			Level: "warn",
+			Debug: true,
+		},
 	}
 
-	if err := saveConfigToFile(path, &original); err != nil {
-		t.Fatalf("saveConfigToFile: %v", err)
+	if err := original.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 
-	loaded := Config{}
-	if err := loadConfigFromFile(path, &loaded); err != nil {
-		t.Fatalf("loadConfigFromFile: %v", err)
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
 	}
 
-	if loaded.Port != original.Port {
-		t.Errorf("Port: got %d, want %d", loaded.Port, original.Port)
+	if loaded.Server.Port != original.Server.Port {
+		t.Errorf("Server.Port: got %d, want %d", loaded.Server.Port, original.Server.Port)
 	}
-	if loaded.Theme != original.Theme {
-		t.Errorf("Theme: got %q, want %q", loaded.Theme, original.Theme)
+	if loaded.Server.AllowRemote != original.Server.AllowRemote {
+		t.Errorf("Server.AllowRemote: got %v, want %v", loaded.Server.AllowRemote, original.Server.AllowRemote)
 	}
-	if loaded.AutoStart != original.AutoStart {
-		t.Errorf("AutoStart: got %v, want %v", loaded.AutoStart, original.AutoStart)
+	if loaded.Server.HotReload != original.Server.HotReload {
+		t.Errorf("Server.HotReload: got %v, want %v", loaded.Server.HotReload, original.Server.HotReload)
 	}
-	if loaded.StartMinimized != original.StartMinimized {
-		t.Errorf("StartMinimized: got %v, want %v", loaded.StartMinimized, original.StartMinimized)
+	if loaded.UI.Theme != original.UI.Theme {
+		t.Errorf("UI.Theme: got %q, want %q", loaded.UI.Theme, original.UI.Theme)
 	}
-	if loaded.ShowPreviewWindow != original.ShowPreviewWindow {
-		t.Errorf("ShowPreviewWindow: got %v, want %v", loaded.ShowPreviewWindow, original.ShowPreviewWindow)
+	if loaded.UI.AutoStart != original.UI.AutoStart {
+		t.Errorf("UI.AutoStart: got %v, want %v", loaded.UI.AutoStart, original.UI.AutoStart)
 	}
-	if loaded.PreviewAlwaysOnTop != original.PreviewAlwaysOnTop {
-		t.Errorf("PreviewAlwaysOnTop: got %v, want %v", loaded.PreviewAlwaysOnTop, original.PreviewAlwaysOnTop)
+	if loaded.UI.StartMinimized != original.UI.StartMinimized {
+		t.Errorf("UI.StartMinimized: got %v, want %v", loaded.UI.StartMinimized, original.UI.StartMinimized)
 	}
-	if loaded.SelectedDevice != original.SelectedDevice {
-		t.Errorf("SelectedDevice: got %q, want %q", loaded.SelectedDevice, original.SelectedDevice)
+	if loaded.UI.ShowPreviewWindow != original.UI.ShowPreviewWindow {
+		t.Errorf("UI.ShowPreviewWindow: got %v, want %v", loaded.UI.ShowPreviewWindow, original.UI.ShowPreviewWindow)
 	}
-	if loaded.Debug != original.Debug {
-		t.Errorf("Debug: got %v, want %v", loaded.Debug, original.Debug)
+	if loaded.UI.PreviewAlwaysOnTop != original.UI.PreviewAlwaysOnTop {
+		t.Errorf("UI.PreviewAlwaysOnTop: got %v, want %v", loaded.UI.PreviewAlwaysOnTop, original.UI.PreviewAlwaysOnTop)
 	}
-	if loaded.HotReload != original.HotReload {
-		t.Errorf("HotReload: got %v, want %v", loaded.HotReload, original.HotReload)
+	if loaded.SMTC.SelectedDevice != original.SMTC.SelectedDevice {
+		t.Errorf("SMTC.SelectedDevice: got %q, want %q", loaded.SMTC.SelectedDevice, original.SMTC.SelectedDevice)
 	}
-	if loaded.ControlAllowRemote != original.ControlAllowRemote {
-		t.Errorf("ControlAllowRemote: got %v, want %v", loaded.ControlAllowRemote, original.ControlAllowRemote)
+	if loaded.Logging.Level != original.Logging.Level {
+		t.Errorf("Logging.Level: got %q, want %q", loaded.Logging.Level, original.Logging.Level)
+	}
+	if loaded.Logging.Debug != original.Logging.Debug {
+		t.Errorf("Logging.Debug: got %v, want %v", loaded.Logging.Debug, original.Logging.Debug)
 	}
 }
 
-// TestLoadConfig_UnknownFields verifies that loadConfigFromFile ignores
-// JSON fields that do not correspond to Config struct fields.
-func TestLoadConfig_UnknownFields(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-
-	data := `{"port": 9999, "unknownField": "ignored", "anotherUnknown": 42}`
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		t.Fatalf("failed to write test config: %v", err)
-	}
-
-	cfg := &Config{}
-	if err := loadConfigFromFile(path, cfg); err != nil {
-		t.Fatalf("loadConfigFromFile returned unexpected error: %v", err)
-	}
-
-	if cfg.Port != 9999 {
-		t.Errorf("Port: got %d, want 9999", cfg.Port)
+// TestValidate_Valid confirms a well-formed Config passes validation.
+func TestValidate_Valid(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected nil error for valid config, got: %v", err)
 	}
 }
 
-// TestLoadConfig_EmptyJSON verifies that loadConfigFromFile handles an empty
-// JSON object without error, leaving all Config fields unchanged.
-func TestLoadConfig_EmptyJSON(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-
-	data := `{}`
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		t.Fatalf("failed to write test config: %v", err)
+// TestValidate_PortZero verifies that port 0 fails validation.
+func TestValidate_PortZero(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Server.Port = 0
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for port=0, got nil")
 	}
+}
 
-	cfg := &Config{Port: 12345, Theme: "myTheme"}
-	if err := loadConfigFromFile(path, cfg); err != nil {
-		t.Fatalf("loadConfigFromFile returned unexpected error: %v", err)
+// TestValidate_PortTooHigh verifies that port >65535 fails validation.
+func TestValidate_PortTooHigh(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Server.Port = 70000
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for port=70000, got nil")
 	}
+}
 
-	if cfg.Port != 12345 {
-		t.Errorf("Port: got %d, want 12345 (unchanged)", cfg.Port)
+// TestValidate_EmptyTheme verifies that an empty theme fails validation.
+func TestValidate_EmptyTheme(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.UI.Theme = ""
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for empty theme, got nil")
 	}
-	if cfg.Theme != "myTheme" {
-		t.Errorf("Theme: got %q, want \"myTheme\" (unchanged)", cfg.Theme)
+}
+
+// TestValidate_BadLevel verifies that an unrecognised log level fails validation.
+func TestValidate_BadLevel(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Logging.Level = "verbose"
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for level=\"verbose\", got nil")
 	}
 }
