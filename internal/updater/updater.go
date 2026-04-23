@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -38,13 +39,26 @@ type UpdateInfo struct {
 // CheckForUpdate queries GitHub releases API and compares with currentVersion.
 // Returns nil, nil if up to date. Returns UpdateInfo with Available=true if newer.
 // Returns nil, error on network/parse failure.
-func CheckForUpdate(currentVersion, apiURL string) (*UpdateInfo, error) {
-	return checkForUpdate(currentVersion, apiURL, &http.Client{Timeout: 10 * time.Second})
+// The context is used to control the HTTP request timeout and cancellation.
+func CheckForUpdate(ctx context.Context, currentVersion, apiURL string) (*UpdateInfo, error) {
+	return checkForUpdate(ctx, currentVersion, apiURL, &http.Client{Timeout: 10 * time.Second})
 }
 
 // checkForUpdate is the internal implementation that accepts a custom http.Client for testability.
-func checkForUpdate(currentVersion, apiURL string, client *http.Client) (*UpdateInfo, error) {
-	resp, err := client.Get(apiURL)
+func checkForUpdate(ctx context.Context, currentVersion, apiURL string, client *http.Client) (*UpdateInfo, error) {
+	// Apply a 10-second timeout if the context doesn't already have one.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("update check request creation failed: %w", err)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("update check failed: %w", err)
 	}

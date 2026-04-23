@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -175,7 +176,7 @@ func New(version string) *Gui {
 
 	// Check for updates in the background without blocking startup.
 	go func() {
-		info, err := updater.CheckForUpdate(version, updater.DefaultAPIURL)
+		info, err := updater.CheckForUpdate(context.Background(), version, updater.DefaultAPIURL)
 		if err != nil {
 			slog.Warn("update check failed", "err", err)
 			return

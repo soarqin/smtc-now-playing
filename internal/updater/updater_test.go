@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -103,7 +104,14 @@ func TestCheckForUpdate(t *testing.T) {
 			}
 			client := &http.Client{Timeout: timeout}
 
-			info, err := checkForUpdate(tt.currentVersion, srv.URL, client)
+			ctx := context.Background()
+			if tt.clientTimeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tt.clientTimeout)
+				defer cancel()
+			}
+
+			info, err := checkForUpdate(ctx, tt.currentVersion, srv.URL, client)
 
 			if tt.wantErr {
 				if err == nil {
@@ -216,7 +224,8 @@ func TestCheckForUpdate_FieldValues(t *testing.T) {
 	defer srv.Close()
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	info, err := checkForUpdate("1.0.0", srv.URL, client)
+	ctx := context.Background()
+	info, err := checkForUpdate(ctx, "1.0.0", srv.URL, client)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -240,5 +249,36 @@ func TestCheckForUpdate_FieldValues(t *testing.T) {
 	actualNotes := strings.TrimSpace(info.ReleaseNotes)
 	if actualNotes != expectedNotes {
 		t.Errorf("ReleaseNotes = %q, want %q", actualNotes, expectedNotes)
+	}
+}
+
+// TestCheckForUpdate_ContextCancellation verifies that context cancellation
+// aborts the HTTP request and returns an error within a reasonable time.
+func TestCheckForUpdate_ContextCancellation(t *testing.T) {
+	// Create a server that sleeps for 2 seconds before responding.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Create a context that cancels after 100ms.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	start := time.Now()
+	info, err := checkForUpdate(ctx, "1.0.0", srv.URL, client)
+
+	elapsed := time.Since(start)
+
+	// Verify the request was cancelled and returned an error.
+	if err == nil {
+		t.Errorf("expected error due to context cancellation, got nil (info=%v)", info)
+	}
+
+	// Verify the request completed within 500ms (well before the 2s server sleep).
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("request took %v, expected < 500ms (context should have cancelled it)", elapsed)
 	}
 }
