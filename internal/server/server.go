@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -30,17 +32,18 @@ type WebServer struct {
 
 	errorChan           chan error
 	waitGroup           sync.WaitGroup
+	smtcCancel          context.CancelFunc
 	wsConnections       map[*gws.Conn]struct{}
 	wsConnectionsMutex  sync.Mutex
 	albumArtContentType string
 	albumArtData        []byte
 
 	// Hot-reload file watcher
-	hotReload    bool
-	watcher      *fsnotify.Watcher
-	hotReloadCh  chan struct{} // closed to signal the watcher goroutine to exit
-	hotReloadWG  sync.WaitGroup
-	hotReloadMu  sync.Mutex // protects watcher / hotReloadCh during Start/Stop
+	hotReload   bool
+	watcher     *fsnotify.Watcher
+	hotReloadCh chan struct{} // closed to signal the watcher goroutine to exit
+	hotReloadWG sync.WaitGroup
+	hotReloadMu sync.Mutex // protects watcher / hotReloadCh during Start/Stop
 
 	// Device selection
 	sessionsMutex          sync.Mutex
@@ -460,7 +463,15 @@ func (srv *WebServer) Start() {
 		srv.waitGroup.Done()
 	}()
 	slog.Info("server started", "port", srv.httpSrv.Addr)
-	srv.smtc.Start()
+	smtcCtx, cancel := context.WithCancel(context.Background())
+	srv.smtcCancel = cancel
+	srv.waitGroup.Add(1)
+	go func() {
+		defer srv.waitGroup.Done()
+		if err := srv.smtc.Run(smtcCtx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("smtc loop exited", "err", err)
+		}
+	}()
 	if srv.hotReload {
 		srv.startHotReload(fmt.Sprintf("themes/%s", srv.currentTheme))
 	}
@@ -510,7 +521,11 @@ func (srv *WebServer) Stop() {
 		}
 	}
 
-	srv.smtc.Stop()
+	cancel := srv.smtcCancel
+	srv.smtcCancel = nil
+	if cancel != nil {
+		cancel()
+	}
 	srv.httpSrv.Close()
 	srv.waitGroup.Wait()
 	slog.Info("server stopped")

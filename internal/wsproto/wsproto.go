@@ -58,7 +58,7 @@ type InfoPayload struct {
 	AlbumArtist  string `json:"albumArtist"`
 	PlaybackType int    `json:"playbackType"`
 	SourceApp    string `json:"sourceApp"`
-	ThumbnailURL string `json:"thumbnailUrl"`
+	AlbumArt     string `json:"albumArt"`
 }
 
 // ProgressPayload is the data for a progress message
@@ -116,7 +116,7 @@ func NewHello(version string, caps map[string]bool) Envelope {
 }
 
 // NewInfo creates an info message
-func NewInfo(d domain.InfoData, thumbnailURL string) Envelope {
+func NewInfo(d domain.InfoData, albumArtURL string) Envelope {
 	payload := InfoPayload{
 		Artist:       d.Artist,
 		Title:        d.Title,
@@ -124,7 +124,7 @@ func NewInfo(d domain.InfoData, thumbnailURL string) Envelope {
 		AlbumArtist:  d.AlbumArtist,
 		PlaybackType: d.PlaybackType,
 		SourceApp:    d.SourceApp,
-		ThumbnailURL: thumbnailURL,
+		AlbumArt:     albumArtURL,
 	}
 	data, _ := json.Marshal(payload)
 	return Envelope{

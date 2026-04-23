@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -246,8 +247,9 @@ func TestHandleCapabilities_ReturnsShape(t *testing.T) {
 func TestHandleControlSeek_ValidBody(t *testing.T) {
 	srv := New("localhost", "0", "default", "", false)
 	// Start the smtc goroutine so sendControl can complete with ErrNoSession.
-	_ = srv.smtc.Start()
-	defer srv.smtc.Stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = srv.smtc.Run(ctx) }()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/control/seek",
 		strings.NewReader(`{"position": 5000}`))
@@ -304,8 +306,9 @@ func TestHandleControlSeek_InvalidBody(t *testing.T) {
 func TestHandleControlShuffle_ValidBody(t *testing.T) {
 	srv := New("localhost", "0", "default", "", false)
 	// Start the smtc goroutine so sendControl can complete with ErrNoSession.
-	_ = srv.smtc.Start()
-	defer srv.smtc.Stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = srv.smtc.Run(ctx) }()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/control/shuffle",
 		strings.NewReader(`{"active": true}`))
@@ -341,8 +344,9 @@ func TestHandleControlShuffle_InvalidBody(t *testing.T) {
 func TestHandleControlRepeat_ValidBody(t *testing.T) {
 	srv := New("localhost", "0", "default", "", false)
 	// Start the smtc goroutine so sendControl can complete with ErrNoSession.
-	_ = srv.smtc.Start()
-	defer srv.smtc.Stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = srv.smtc.Run(ctx) }()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/control/repeat",
 		strings.NewReader(`{"mode": 1}`))
