@@ -119,8 +119,12 @@ func New(cfg *config.Config, smtcSvc SMTCService) (*Server, error) {
 
 	mux := s.setupRoutes()
 	s.httpSrv = &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler: mux,
+		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
+		Handler:           mux,
+		ReadTimeout:       httpReadTimeout,
+		ReadHeaderTimeout: 3 * time.Second,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
 	}
 
 	return s, nil
@@ -137,7 +141,7 @@ func (s *Server) setupRoutes() http.Handler {
 	mux.HandleFunc("GET /script/{file}", s.handleScript)
 	mux.HandleFunc("GET /ws", s.handleWebSocket)
 	mux.HandleFunc("GET /", s.handleTheme)
-	return mux
+	return accessLog(mux, s.cfg.Logging.Debug)
 }
 
 func (s *Server) Run(ctx context.Context) error {

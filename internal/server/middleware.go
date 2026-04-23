@@ -1,6 +1,10 @@
 package server
 
-import "net/http"
+import (
+	"log/slog"
+	"net/http"
+	"time"
+)
 
 func localhostOnly(h http.HandlerFunc, allowRemote bool) http.HandlerFunc {
 	if allowRemote {
@@ -13,4 +17,16 @@ func localhostOnly(h http.HandlerFunc, allowRemote bool) http.HandlerFunc {
 		}
 		h(w, r)
 	}
+}
+
+func accessLog(next http.Handler, debug bool) http.Handler {
+	if !debug {
+		return next
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startedAt := time.Now()
+		next.ServeHTTP(w, r)
+		slog.Debug("http request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(startedAt))
+	})
 }

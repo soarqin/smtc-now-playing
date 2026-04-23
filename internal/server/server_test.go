@@ -198,6 +198,18 @@ func TestNew_InitializesServer(t *testing.T) {
 	if got := srv.Address(); got != ":4321" {
 		t.Fatalf("Address() = %q, want %q", got, ":4321")
 	}
+	if srv.httpSrv.ReadTimeout != httpReadTimeout {
+		t.Fatalf("ReadTimeout = %v, want %v", srv.httpSrv.ReadTimeout, httpReadTimeout)
+	}
+	if srv.httpSrv.WriteTimeout != httpWriteTimeout {
+		t.Fatalf("WriteTimeout = %v, want %v", srv.httpSrv.WriteTimeout, httpWriteTimeout)
+	}
+	if srv.httpSrv.IdleTimeout != httpIdleTimeout {
+		t.Fatalf("IdleTimeout = %v, want %v", srv.httpSrv.IdleTimeout, httpIdleTimeout)
+	}
+	if srv.httpSrv.ReadHeaderTimeout != 3*time.Second {
+		t.Fatalf("ReadHeaderTimeout = %v, want %v", srv.httpSrv.ReadHeaderTimeout, 3*time.Second)
+	}
 }
 
 func TestHandleInfoEvent_MessageFormattingAndDeduplication(t *testing.T) {
