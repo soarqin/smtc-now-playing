@@ -5,56 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-04-23
 
-### Breaking Changes
-- WebSocket protocol upgraded to v2: envelope format `{type, v:2, id, ts, data}`, hello handshake on connect, bidirectional control commands with ack, server heartbeat
-- Config file format changed to nested structure; existing v1 flat configs are auto-migrated on first run
-- SMTC event callback API replaced with channel-based `Subscribe()`/`Unsubscribe()` fan-out
-- Binary layout changed: `cmd/smtc-now-playing/` and `cmd/smtc-test/` (was root `main.go` + `smtc_testmain.go`)
-- `smtc_test` build tag removed; use `go build ./cmd/smtc-test` instead
+A major release focused on stability and reliability. For most users upgrading from 1.x, this is a drop-in update — your existing config is migrated automatically and built-in themes keep working as before.
 
 ### Added
-- `--headless` flag for no-GUI server-only mode
-- GitHub Actions CI workflow (build, test, lint, vulncheck on every PR)
-- `go tool` directive pins `golangci-lint` and `govulncheck` in `go.mod`
-- `internal/domain` package: shared data types (InfoData, ProgressData, SessionInfo, etc.)
-- `internal/wsproto` package: WebSocket v2 protocol types and helpers
-- `internal/version` package: app version exported for both binaries
-- Per-subscriber drop counter for event fan-out
-- Sentinel errors: `smtc.ErrNoSession`, `config.ErrInvalidConfig`, `server.ErrServerShutdown`
+- `--headless` flag: run the HTTP/WebSocket server with no GUI or system tray, for background/service use or machines without a display.
 
 ### Changed
-- All packages: context.Context propagation for cancellable/blocking operations
-- Error handling: all errors wrapped with `fmt.Errorf("%w", err)`, `errors.Is`/`errors.As` used throughout
-- Logging: `log/slog` enriched with subsystem label per package
-- HTTP server: timeouts set (ReadTimeout, WriteTimeout, IdleTimeout), graceful shutdown via `context.Background()`-derived timeout
-- Server: hub actor pattern replaces 5 mutexes; zero sync.Mutex in server non-test code
-- Server: Go 1.22 stdlib routing (`GET /path/{wildcard}` patterns)
-- Config: constructor injection replaces global singleton (`config.Get()` removed)
-- SMTC goroutine: `Run(ctx)` replaces `Start()`/`Stop()` lifecycle
-
-### Removed
-- `config.Get()` global singleton
-- SMTC 4-callback `Options` struct (OnInfo, OnProgress, OnSessionsChanged, OnSelectedDeviceChange)
-- `smtc_testmain.go` at root (replaced by `cmd/smtc-test/`)
-- Root `main.go` and `version.go` (moved to `cmd/smtc-now-playing/`)
+- WebSocket protocol upgraded to v2 (new envelope, handshake, heartbeat, and bidirectional control with acknowledgements). Built-in themes and `script/functions.js` are updated to match. Custom themes or third-party WebSocket clients written against v1 must be updated — see the WebSocket API section in README for the new message format.
+- Configuration file moved to a nested layout. Existing flat config files are migrated automatically on first launch; no manual edits needed.
+- Improved overall robustness: graceful shutdown, request timeouts, and tighter lifecycle handling mean slow or misbehaving clients can no longer stall other clients or hang the app on exit.
 
 ### Fixed
-- Silent error swallowing in WinRT async operations (now wrapped with `fmt.Errorf`)
-- Previously dropped SMTC events now logged with per-subscriber drop counter
+- Cover art occasionally disappearing right after a song switch, when a fast follow-up event could overwrite the freshly-applied art.
+- Playback progress failing to reset to `0:00` when replaying the same song.
+- Cover art briefly going blank on transient media-stream failures — the previous image is now kept while a retry is in flight.
+- Duplicate album-art requests from built-in themes; a placeholder is now shown while art is loading.
+- Various edge cases in media thumbnail and WinRT error paths that previously produced misleading or silent failures.
 
-### Migration Notes
-- WebSocket clients must update to v2 protocol (envelope format changed)
-- Config files: existing flat JSON is auto-migrated on first launch; no manual edit needed
-- Themes: HTML/CSS unchanged; `functions.js` updated automatically with the binary
-- Installer: same binary name (`SmtcNowPlaying.exe`), same AppId GUID
-
-## [Unreleased]
-
-### Fixed
-- Cover art occasionally disappearing right after a song switch: when a follow-up `info` event delivered the album art within the 300 ms track-change transition, the scheduled `setTimeout` in `script/functions.js` would fire later with its closure-captured (often empty) album-art URL and overwrite the freshly-applied one. Pending track info is now held in a shared variable that every follow-up event updates in place, so the timeout always applies the latest values.
-- Playback progress failing to reset to the start when replaying the same song: `handlePlaybackInfoChanged` fired `OnProgress` with only `Status` set, zeroing the client's `position`/`duration`/`lastUpdatedTime`/`playbackRate`. If the next 200 ms `readTimelineAndProgress` tick then dedup-matched (e.g. `currentPosition` was already 0), no fresh data was sent and the UI stayed stuck at `0:00/`. The handler now delegates to `readTimelineAndProgress`, guaranteeing a complete progress snapshot on every status transition.
+### Upgrade notes
+- **Installed version:** install the new build over the old one; your config is migrated automatically.
+- **Portable version:** unzip the new build over the old one; `portable_config.json` is migrated on first launch.
+- **Third-party WebSocket clients or custom themes using v1:** update to the v2 envelope format (see README → WebSocket API).
 
 ## [1.2.2] - 2026-04-22
 
