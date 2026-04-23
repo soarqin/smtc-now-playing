@@ -68,6 +68,10 @@ type Smtc struct {
 	// Access serialised by timerMu — it's manipulated from both the SMTC
 	// goroutine (via handleMediaPropertiesChanged) and Run() cleanup.
 	thumbnailRetryTimer *time.Timer
+	// thumbnailRetryCount tracks how many retry attempts have been made for
+	// the current song. Reset to 0 on each song change. Accessed only from
+	// the SMTC goroutine (no mutex needed).
+	thumbnailRetryCount int
 	timerMu             sync.Mutex
 }
 
