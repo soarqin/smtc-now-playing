@@ -595,7 +595,7 @@ func (me *Gui) createWebView() {
 	if me.webViewWin != nil {
 		return
 	}
-	me.webViewWin = webview.New(webview.Options{
+	wv, err := webview.New(context.Background(), webview.Options{
 		URL:         fmt.Sprintf("http://127.0.0.1:%s?_t=%d", me.portEdit.Text(), time.Now().UnixMilli()),
 		AlwaysOnTop: me.cbPreviewAlwaysOnTop.IsChecked(),
 		OnDestroy: func() {
@@ -609,6 +609,11 @@ func (me *Gui) createWebView() {
 			me.webViewWin.SetSize(left+width, top+height, webview2.HintFixed)
 		},
 	})
+	if err != nil {
+		log.Warn("webview preview unavailable", "err", err)
+		return
+	}
+	me.webViewWin = wv
 	me.updateWebViewAlwaysOnTop()
 }
 

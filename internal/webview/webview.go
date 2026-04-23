@@ -1,6 +1,8 @@
 package webview
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"unsafe"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/soarqin/go-webview2"
 	"golang.org/x/sys/windows"
 )
+
+var log = slog.With("subsystem", "webview")
 
 var (
 	modUser32             = windows.NewLazySystemDLL("user32.dll")
@@ -35,6 +39,7 @@ type screenPoint struct {
 }
 
 type Preview struct {
+	ctx        context.Context //nolint:containedctx // stored for future cancellation propagation
 	webViewWin webview2.WebView
 }
 
@@ -102,7 +107,7 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 })();`
 
-func New(opts Options) *Preview {
+func New(ctx context.Context, opts Options) (*Preview, error) {
 	width, height := ui.Dpi(600, 400)
 	var webViewOptions = webview2.WebViewOptions{
 		Debug:     false,
@@ -119,11 +124,10 @@ func New(opts Options) *Preview {
 		OnDestroy: opts.OnDestroy,
 	}
 
-	wv := &Preview{}
+	wv := &Preview{ctx: ctx}
 	wv.webViewWin = webview2.NewWithOptions(webViewOptions)
 	if wv.webViewWin == nil {
-		slog.Error("failed to load webview, preview disabled")
-		return wv
+		return nil, fmt.Errorf("webview2: failed to create WebView2 window")
 	}
 
 	if opts.OnRootLoaded != nil {
@@ -144,7 +148,7 @@ func New(opts Options) *Preview {
 	wv.webViewWin.Navigate(opts.URL)
 	wv.SetAlwaysOnTop(opts.AlwaysOnTop)
 
-	return wv
+	return wv, nil
 }
 
 // setMaxSize sets the maximum window size constraint and strips WS_THICKFRAME
