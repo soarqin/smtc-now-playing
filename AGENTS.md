@@ -24,16 +24,16 @@ build.bat
 ```
 This builds the Go executable.
 
-### Manual Build - Go Executable Only
+### Manual Build - Main Binary
 ```batch
-go build -ldflags="-s -w -H windowsgui" -o dist/SmtcNowPlaying.exe
+go build -ldflags="-s -w -H windowsgui -X smtc-now-playing/internal/version.Version=<version>" -o dist/SmtcNowPlaying.exe ./cmd/smtc-now-playing
 ```
 
-### Test Mode Build
+### Dev Test Tool (console, not shipped in releases)
 ```batch
-go build -tags smtc_test -o test.exe
+go build -o dist/smtc-test.exe ./cmd/smtc-test
 ```
-Builds a console test application that listens for SMTC events and prints to stdout.
+Builds a console application that listens for SMTC events and prints to stdout.
 
 ### Lint/Format
 ```batch
@@ -43,7 +43,11 @@ go vet ./...
 
 ## Testing
 
-No unit tests currently exist in this codebase. Testing is done via the test mode build (`-tags smtc_test`) which provides console output for manual verification.
+Test coverage exists for config, domain, wsproto, smtc (control and helpers), server, and updater packages. Run tests with:
+
+```batch
+go test ./...
+```
 
 ## Code Style Guidelines
 
@@ -66,41 +70,54 @@ Windows SMTC → winrt-go (WinRT COM) → internal/smtc → internal/server → 
 
 ```
 smtc-now-playing/
-├── internal/           # Go packages
-│   ├── config/         # Configuration handling
-│   ├── gui/            # Windows GUI and system tray
-│   ├── server/         # HTTP/WebSocket server
-│   ├── smtc/           # SMTC WinRT interface
-│   └── webview/        # WebView2 preview window
-├── themes/             # Web themes
-├── build.bat           # Build script
-└── main.go             # Application entry point
+├── cmd/
+│   ├── smtc-now-playing/   # Main application entry point
+│   └── smtc-test/          # Dev console tool for SMTC event inspection
+├── internal/               # Go packages
+│   ├── config/             # Configuration handling
+│   ├── domain/             # Shared data types (InfoData, ProgressData, SessionInfo, etc.)
+│   ├── gui/                # Windows GUI and system tray
+│   ├── server/             # HTTP/WebSocket server
+│   ├── smtc/               # SMTC WinRT interface
+│   ├── version/            # App version exported for both binaries
+│   ├── webview/            # WebView2 preview window
+│   └── wsproto/            # WebSocket v2 protocol types and helpers
+├── themes/                 # Web themes
+├── build.bat               # Build script
+└── installer/              # Inno Setup installer script
 ```
 
 ### Package Dependencies
 
 ```
-main.go → internal/gui → internal/config
-                         internal/server → internal/smtc
-                         internal/webview
+cmd/smtc-now-playing → internal/gui → internal/config
+                                       internal/server → internal/smtc
+                                                         internal/domain
+                                                         internal/wsproto
+                                       internal/webview
+                       internal/version
 ```
 
 No circular dependencies. Each internal package has a single responsibility.
 
 ### SMTC Interface
-The Go smtc package uses an event-driven architecture:
-- `OnInfo` callback: fired when artist/title/thumbnail changes
-- `OnProgress` callback: fired every 200ms with position/duration/status
+The Go smtc package uses a channel-based fan-out architecture:
+- `Subscribe()` / `Unsubscribe()`: register/deregister event channels
+- `Run(ctx)`: starts the SMTC goroutine; blocks until context is cancelled
 
 ### Configuration
 Two modes:
 - **Portable**: `portable_config.json` alongside executable
 - **Installed**: `%APPDATA%/soarqin/smtc-now-playing/config.json`
 
+Config is nested (v2 format). Existing v1 flat configs are auto-migrated on first run.
+
 ### WebSocket Protocol
 - Endpoint: `ws://localhost:<port>/ws`
-- Message types: `info`, `progress`
-- Format: `{"type": "<type>", "data": {...}}`
+- Protocol version: v2
+- Envelope format: `{"type": "<type>", "v": 2, "id": "<id>", "ts": <ms>, "data": {...}}`
+- Message types (server→client): `hello`, `info`, `progress`, `sessions`, `reload`, `pong`, `ack`
+- Message types (client→server): `ping`, `control`
 
 ## Dependencies
 

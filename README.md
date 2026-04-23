@@ -21,6 +21,14 @@ Display "Now Playing" information from Windows System Media Transport Controls (
 
 The page updates automatically whenever your media player changes tracks or playback state.
 
+### Headless mode
+
+Run with `--headless` to start the HTTP/WebSocket server without any GUI or system tray. Useful for running as a background service or in environments without a display.
+
+```
+SmtcNowPlaying.exe --headless
+```
+
 ## Configuration
 
 The app looks for config in two places, in order:
@@ -28,51 +36,124 @@ The app looks for config in two places, in order:
 1. `portable_config.json` alongside the executable (portable mode)
 2. `%APPDATA%\soarqin\smtc-now-playing\config.json` (installed mode)
 
-If neither file exists, all defaults apply.
+If neither file exists, all defaults apply. Existing v1 flat config files are auto-migrated to the v2 nested format on first run.
 
 ### Example config
 
 ```json
 {
-  "port": 11451,
-  "theme": "default",
-  "autostart": false,
-  "startminimized": false,
-  "showpreviewwindow": false,
-  "previewalwaysontop": true,
-  "selecteddevice": "",
-  "debug": false,
-  "hotReload": false,
-  "controlAllowRemote": false
+  "server": {
+    "port": 11451,
+    "allowRemote": false,
+    "hotReload": false
+  },
+  "ui": {
+    "theme": "default",
+    "autoStart": false,
+    "startMinimized": false,
+    "showPreviewWindow": false,
+    "previewAlwaysOnTop": true
+  },
+  "smtc": {
+    "selectedDevice": ""
+  },
+  "logging": {
+    "level": "info",
+    "debug": false
+  }
 }
 ```
 
 ### Config fields
 
+**`server`**
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `port` | int | `11451` | HTTP server port |
-| `theme` | string | `"default"` | Theme folder name inside `themes/` |
-| `autostart` | bool | `false` | Launch with Windows |
-| `startminimized` | bool | `false` | Start minimized to system tray |
-| `showpreviewwindow` | bool | `false` | Show a WebView2 preview window |
-| `previewalwaysontop` | bool | `true` | Keep preview window on top of other windows |
-| `selecteddevice` | string | `""` | App ID of the SMTC session to monitor (empty = auto) |
-| `debug` | bool | `false` | Enable debug logging |
+| `allowRemote` | bool | `false` | Allow media control endpoints from non-localhost addresses |
 | `hotReload` | bool | `false` | Watch theme files and reload connected clients on change |
-| `controlAllowRemote` | bool | `false` | Allow media control endpoints from non-localhost addresses |
+
+**`ui`**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `theme` | string | `"default"` | Theme folder name inside `themes/` |
+| `autoStart` | bool | `false` | Launch with Windows |
+| `startMinimized` | bool | `false` | Start minimized to system tray |
+| `showPreviewWindow` | bool | `false` | Show a WebView2 preview window |
+| `previewAlwaysOnTop` | bool | `true` | Keep preview window on top of other windows |
+
+**`smtc`**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `selectedDevice` | string | `""` | App ID of the SMTC session to monitor (empty = auto) |
+
+**`logging`**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `level` | string | `"info"` | Log level: `"debug"`, `"info"`, `"warn"`, `"error"` |
+| `debug` | bool | `false` | Enable verbose debug logging (shorthand for `level: "debug"`) |
 
 ## WebSocket API
 
-Connect to `ws://localhost:11451/ws`. On connect, the server immediately sends the current `info` and `progress` messages so clients don't have to wait for the next update.
+Connect to `ws://localhost:11451/ws`. The server uses a v2 envelope format for all messages.
 
-### `info` message
+### Message envelope
+
+Every message follows this structure:
+
+```json
+{
+  "type": "<message-type>",
+  "v": 2,
+  "id": "abc123",
+  "ts": 1711900000000,
+  "data": { ... }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `type` | Message type string |
+| `v` | Protocol version (always `2`) |
+| `id` | Message ID (string); echoed in `ack` responses |
+| `ts` | Server timestamp in milliseconds |
+| `data` | Message payload (type-specific) |
+
+### Server-to-client messages
+
+#### `hello`
+
+Sent immediately on connect. Carries server version and current state.
+
+```json
+{
+  "type": "hello",
+  "v": 2,
+  "id": "...",
+  "ts": 1711900000000,
+  "data": {
+    "version": "2.0.0",
+    "info": { ... },
+    "progress": { ... },
+    "sessions": [ ... ]
+  }
+}
+```
+
+#### `info`
 
 Sent when track metadata changes.
 
 ```json
 {
   "type": "info",
+  "v": 2,
+  "id": "...",
+  "ts": 1711900000000,
   "data": {
     "title": "Track Title",
     "artist": "Artist Name",
@@ -89,13 +170,16 @@ Sent when track metadata changes.
 
 `playbackType` values: `0` = Unknown, `1` = Music, `2` = Video, `3` = Image.
 
-### `progress` message
+#### `progress`
 
 Sent approximately every 200ms while media is active.
 
 ```json
 {
   "type": "progress",
+  "v": 2,
+  "id": "...",
+  "ts": 1711900000000,
   "data": {
     "position": 120,
     "duration": 240,
@@ -114,7 +198,7 @@ Sent approximately every 200ms while media is active.
 
 `autoRepeatMode` values: `0` = None, `1` = Track, `2` = List.
 
-#### Status values
+##### Status values
 
 | Value | Meaning |
 |-------|---------|
@@ -125,13 +209,81 @@ Sent approximately every 200ms while media is active.
 | `4` | Playing |
 | `5` | Paused |
 
-### `reload` message
+#### `sessions`
+
+Sent when the list of available SMTC sessions changes.
+
+```json
+{
+  "type": "sessions",
+  "v": 2,
+  "id": "...",
+  "ts": 1711900000000,
+  "data": [
+    {"AppID": "Spotify.exe", "Name": "Spotify", "SourceAppId": "Spotify.exe"}
+  ]
+}
+```
+
+#### `reload`
 
 Sent to all clients when hot-reload is enabled and a theme file changes.
 
 ```json
-{"type": "reload"}
+{"type": "reload", "v": 2, "id": "...", "ts": 1711900000000}
 ```
+
+#### `pong`
+
+Response to a client `ping`.
+
+```json
+{"type": "pong", "v": 2, "id": "...", "ts": 1711900000000}
+```
+
+#### `ack`
+
+Response to a client `control` command.
+
+```json
+{
+  "type": "ack",
+  "v": 2,
+  "id": "...",
+  "ts": 1711900000000,
+  "data": {
+    "id": "<original-message-id>",
+    "success": true,
+    "error": ""
+  }
+}
+```
+
+### Client-to-server messages
+
+#### `ping`
+
+```json
+{"type": "ping", "v": 2, "id": "client-001", "ts": 1711900000000}
+```
+
+#### `control`
+
+Send a media control command. The server responds with an `ack`.
+
+```json
+{
+  "type": "control",
+  "v": 2,
+  "id": "client-002",
+  "ts": 1711900000000,
+  "data": {
+    "action": "play"
+  }
+}
+```
+
+Available actions: `play`, `pause`, `stop`, `toggle`, `next`, `previous`, `seek` (requires `position` in ms), `shuffle` (requires `active` bool), `repeat` (requires `mode` int).
 
 ## REST API
 
@@ -195,7 +347,7 @@ Returns which controls the current session supports.
 
 ### Media control endpoints
 
-All control endpoints use `POST`. By default they only accept requests from localhost. Set `controlAllowRemote: true` in config to allow remote access.
+All control endpoints use `POST`. By default they only accept requests from localhost. Set `server.allowRemote: true` in config to allow remote access.
 
 All return `{"success": true}` on success or `{"success": false, "error": "..."}` on failure.
 
