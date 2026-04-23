@@ -20,7 +20,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Build Go executable
-        run: go build -ldflags="-s -w -H windowsgui" -o SmtcNowPlaying.exe
+        run: |
+          $tag = "${{ github.ref }}" -replace 'refs/tags/v', ''
+          go build -ldflags="-s -w -H windowsgui -X smtc-now-playing/internal/version.Version=$tag" -o SmtcNowPlaying.exe ./cmd/smtc-now-playing
 
       - name: Extract version from tag
         id: version

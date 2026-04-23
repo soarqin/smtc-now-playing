@@ -1,8 +1,8 @@
-; smtc-now-playing v1.2.0 Installer Script
+; smtc-now-playing v2.0.0 Installer Script
 ; For Inno Setup 6.x — https://jrsoftware.org/isinfo.php
 
 #define MyAppName "smtc-now-playing"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "2.0.0"
 #define MyAppPublisher "soarqin"
 #define MyAppURL "https://github.com/soarqin/smtc-now-playing"
 #define MyAppExeName "SmtcNowPlaying.exe"
