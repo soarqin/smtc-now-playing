@@ -56,27 +56,30 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	// Always read thumbnail — it may have changed independently of artist/title.
 	contentType, thumbData := s.readThumbnail()
 
+	// Transient stream failure: readThumbnail() returned nil (e.g. size=0
+	// reported by the WinRT IRandomAccessStreamReference on a spurious
+	// MediaPropertiesChanged event — common on pause/resume or app state
+	// hiccups for Spotify / browser media). If the song hasn't changed and
+	// we already have valid cached thumbnail bytes, keep using the cache
+	// instead of broadcasting a nil thumbnail, which would cause the client
+	// cover art to flicker off.
+	//
+	// When the song DID change, currentThumbnailData was reset to nil above
+	// (in the `if artistChanged` block), so this fallback intentionally
+	// does not fire — the retry mechanism below handles song-change cases.
+	if !artistChanged && thumbData == nil && s.currentThumbnailData != nil {
+		contentType = s.currentThumbnailContentType
+		thumbData = s.currentThumbnailData
+	}
+
 	// When song changes but thumbnail is not yet available, delay the OnInfo callback
 	// to allow SMTC time to write the thumbnail. This prevents the cover art from
 	// briefly disappearing when the track changes.
 	if artistChanged && thumbData == nil {
 		s.currentArtist = escapedArtist
 		s.currentTitle = escapedTitle
-		// Cancel any pending retry from a previous song change and install
-		// a fresh one under timerMu so Stop() sees a consistent timer.
-		s.timerMu.Lock()
-		if s.thumbnailRetryTimer != nil {
-			s.thumbnailRetryTimer.Stop()
-		}
-		s.thumbnailRetryTimer = time.AfterFunc(thumbnailRetryDelay, func() {
-			select {
-			case s.cmdChan <- func() { s.retryThumbnailAndFireInfo(escapedArtist, escapedTitle, props) }:
-			default:
-				s.droppedEvents.Add(1)
-				log.Warn("SMTC event dropped", "type", "ThumbnailRetry", "dropped_total", s.droppedEvents.Load())
-			}
-		})
-		s.timerMu.Unlock()
+		s.thumbnailRetryCount = 0
+		s.scheduleThumbnailRetry(escapedArtist, escapedTitle, props)
 		return
 	}
 
@@ -105,6 +108,26 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	}})
 }
 
+// scheduleThumbnailRetry arms a one-shot timer that retries readThumbnail
+// on the SMTC goroutine. Called from both handleMediaPropertiesChanged
+// (initial scheduling on song change) and retryThumbnailAndFireInfo
+// (follow-up retries when thumbnail still unavailable).
+func (s *Smtc) scheduleThumbnailRetry(artist, title string, props *control.GlobalSystemMediaTransportControlsSessionMediaProperties) {
+	s.timerMu.Lock()
+	if s.thumbnailRetryTimer != nil {
+		s.thumbnailRetryTimer.Stop()
+	}
+	s.thumbnailRetryTimer = time.AfterFunc(thumbnailRetryDelay, func() {
+		select {
+		case s.cmdChan <- func() { s.retryThumbnailAndFireInfo(artist, title, props) }:
+		default:
+			s.droppedEvents.Add(1)
+			log.Warn("SMTC event dropped", "type", "ThumbnailRetry", "dropped_total", s.droppedEvents.Load())
+		}
+	})
+	s.timerMu.Unlock()
+}
+
 // retryThumbnailAndFireInfo is called ~50ms after a song change when the initial
 // readThumbnail returned nil. By this time SMTC has usually written the thumbnail.
 // Fires OnInfo regardless of whether a thumbnail is available, so the client
@@ -119,6 +142,11 @@ func (s *Smtc) retryThumbnailAndFireInfo(artist, title string, props *control.Gl
 		return
 	}
 	contentType, thumbData := s.readThumbnail()
+	if thumbData == nil && s.thumbnailRetryCount < thumbnailRetryMaxAttempts-1 {
+		s.thumbnailRetryCount++
+		s.scheduleThumbnailRetry(artist, title, props)
+		return
+	}
 	albumTitle, _ := props.GetAlbumTitle()
 	albumArtist, _ := props.GetAlbumArtist()
 	playbackTypeRef, _ := props.GetPlaybackType()
