@@ -4,6 +4,7 @@ package smtc
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -164,5 +165,16 @@ func TestSubscribe_NegativeBufferUsesUnbufferedChannel(t *testing.T) {
 
 	if cap(ch) != 0 {
 		t.Fatalf("channel capacity = %d, want 0", cap(ch))
+	}
+}
+
+// TestErrorWrapping verifies that wrapped errors can be detected with errors.Is.
+func TestErrorWrapping(t *testing.T) {
+	// Simulate a wrapped ErrNoSession error.
+	wrappedErr := fmt.Errorf("control failed: %w", ErrNoSession)
+
+	// Verify errors.Is can detect the wrapped sentinel.
+	if !errors.Is(wrappedErr, ErrNoSession) {
+		t.Errorf("errors.Is(wrappedErr, ErrNoSession) = false, want true")
 	}
 }
