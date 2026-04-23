@@ -9,6 +9,13 @@ import (
 	"path/filepath"
 )
 
+var log = slog.With("subsystem", "config")
+
+// Sentinel errors for configuration validation.
+var (
+	ErrInvalidConfig = errors.New("invalid configuration")
+)
+
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
 	Port        int  `json:"port"`
@@ -97,7 +104,7 @@ func Load(path string) (*Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validate config %q: %w", path, err)
 	}
-	slog.Info("config loaded", "port", cfg.Server.Port, "theme", cfg.UI.Theme)
+	log.Info("config loaded", "port", cfg.Server.Port, "theme", cfg.UI.Theme)
 	return cfg, nil
 }
 
@@ -167,7 +174,7 @@ func migrateV1(rawJSON []byte) (*Config, error) {
 	if cfg.Logging.Debug {
 		cfg.Logging.Level = "debug"
 	}
-	slog.Info("config migrated from v1")
+	log.Info("config migrated from v1")
 	return cfg, nil
 }
 

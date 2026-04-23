@@ -4,7 +4,6 @@ package smtc
 
 import (
 	"fmt"
-	"log/slog"
 	"unsafe"
 
 	"github.com/go-ole/go-ole"
@@ -98,7 +97,7 @@ func (s *Smtc) subscribeSessionsChanged() {
 		case s.cmdChan <- func() { s.enumerateSessions() }:
 		default:
 			s.droppedEvents.Add(1)
-			slog.Warn("SMTC event dropped", "type", "SessionsChanged", "dropped_total", s.droppedEvents.Load())
+			log.Warn("SMTC event dropped", "type", "SessionsChanged", "dropped_total", s.droppedEvents.Load())
 		}
 	})
 	token, _ := s.sessionManager.AddSessionsChanged(handler)
@@ -247,7 +246,7 @@ func (s *Smtc) switchToSession(index int) {
 
 	if index < len(sessions) {
 		appID := sessions[index].AppID
-		slog.Info("SMTC session changed", "app", appID)
+		log.Info("SMTC session changed", "app", appID)
 		s.fanOut(DeviceChangedEvent{AppID: appID})
 	}
 }
@@ -265,7 +264,7 @@ func (s *Smtc) subscribePropertyEvents() {
 		case s.cmdChan <- func() { s.handleMediaPropertiesChanged() }:
 		default:
 			s.droppedEvents.Add(1)
-			slog.Warn("SMTC event dropped", "type", "MediaPropertiesChanged", "dropped_total", s.droppedEvents.Load())
+			log.Warn("SMTC event dropped", "type", "MediaPropertiesChanged", "dropped_total", s.droppedEvents.Load())
 		}
 	})
 	token, _ := s.currentSession.AddMediaPropertiesChanged(mediaHandler)
@@ -282,7 +281,7 @@ func (s *Smtc) subscribePropertyEvents() {
 		case s.cmdChan <- func() { s.handlePlaybackInfoChanged() }:
 		default:
 			s.droppedEvents.Add(1)
-			slog.Warn("SMTC event dropped", "type", "PlaybackInfoChanged", "dropped_total", s.droppedEvents.Load())
+			log.Warn("SMTC event dropped", "type", "PlaybackInfoChanged", "dropped_total", s.droppedEvents.Load())
 		}
 	})
 	token, _ = s.currentSession.AddPlaybackInfoChanged(playbackHandler)

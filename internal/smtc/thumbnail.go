@@ -3,7 +3,6 @@
 package smtc
 
 import (
-	"log/slog"
 	"syscall"
 	"time"
 	"unsafe"
@@ -247,7 +246,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	thumbnail, err := s.currentProperties.GetThumbnail()
 	if err != nil || thumbnail == nil {
 		if err != nil {
-			slog.Debug("failed to get thumbnail", "err", err)
+			log.Debug("failed to get thumbnail", "err", err)
 		}
 		return "", nil
 	}
@@ -255,12 +254,12 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	// Step 2: OpenReadAsync → IAsyncOperation<IRandomAccessStreamWithContentType>
 	op, err := thumbnail.OpenReadAsync()
 	if err != nil {
-		slog.Debug("failed to open read async", "err", err)
+		log.Debug("failed to open read async", "err", err)
 		return "", nil
 	}
 	result, status := waitForAsync(op, iidOpenReadCompletedHandler)
 	if status != foundation.AsyncStatusCompleted || result == nil {
-		slog.Debug("async operation failed or returned nil", "status", status)
+		log.Debug("async operation failed or returned nil", "status", status)
 		return "", nil
 	}
 
@@ -273,7 +272,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	// Step 3: Get stream size via IRandomAccessStream.get_Size.
 	rasItf, err := streamIUnk.QueryInterface(ole.NewGUID(guidIRandomAccessStream))
 	if err != nil {
-		slog.Debug("failed to query IRandomAccessStream interface", "err", err)
+		log.Debug("failed to query IRandomAccessStream interface", "err", err)
 		return "", nil
 	}
 	defer rasItf.Release()
@@ -281,7 +280,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	size, err := ras.getSize()
 	if err != nil || size == 0 {
 		if err != nil {
-			slog.Debug("failed to get stream size", "err", err)
+			log.Debug("failed to get stream size", "err", err)
 		}
 		return "", nil
 	}
@@ -308,7 +307,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	// Step 6: Create IBuffer with sufficient capacity for the whole stream.
 	buf, err := streams.BufferCreate(uint32(size))
 	if err != nil {
-		slog.Debug("failed to create buffer", "err", err)
+		log.Debug("failed to create buffer", "err", err)
 		return "", nil
 	}
 	defer (*ole.IUnknown)(unsafe.Pointer(buf)).Release()
@@ -316,7 +315,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	// QI Buffer for the IBuffer interface required by ReadAsync and DataReaderFromBuffer.
 	ibufItf, err := buf.QueryInterface(ole.NewGUID(streams.GUIDIBuffer))
 	if err != nil {
-		slog.Debug("failed to query IBuffer interface", "err", err)
+		log.Debug("failed to query IBuffer interface", "err", err)
 		return "", nil
 	}
 	defer ibufItf.Release()
@@ -325,7 +324,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	// Step 7: QI stream for IInputStream and call ReadAsync.
 	inputItf, err := streamIUnk.QueryInterface(ole.NewGUID(guidIInputStream))
 	if err != nil {
-		slog.Debug("failed to query IInputStream interface", "err", err)
+		log.Debug("failed to query IInputStream interface", "err", err)
 		return "", nil
 	}
 	defer inputItf.Release()
@@ -334,7 +333,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	asyncOp, err := inputStream.readAsync(ibuf, uint32(size))
 	if err != nil || asyncOp == nil {
 		if err != nil {
-			slog.Debug("failed to read async", "err", err)
+			log.Debug("failed to read async", "err", err)
 		}
 		return "", nil
 	}
@@ -343,7 +342,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	// Step 8: Wait for ReadAsync to complete (polls IAsyncInfo.GetStatus).
 	opStatus := pollAsyncProgress(asyncOp)
 	if opStatus != foundation.AsyncStatusCompleted {
-		slog.Debug("read async operation failed", "status", opStatus)
+		log.Debug("read async operation failed", "status", opStatus)
 		return "", nil
 	}
 
@@ -351,7 +350,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	resultPtr, err := getAsyncWithProgressResult(asyncOp)
 	if err != nil || resultPtr == nil {
 		if err != nil {
-			slog.Debug("failed to get async result", "err", err)
+			log.Debug("failed to get async result", "err", err)
 		}
 		return "", nil
 	}
@@ -362,7 +361,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	bytesRead, err := resultBuf.GetLength()
 	if err != nil || bytesRead == 0 {
 		if err != nil {
-			slog.Debug("failed to get buffer length", "err", err)
+			log.Debug("failed to get buffer length", "err", err)
 		}
 		return "", nil
 	}
@@ -371,7 +370,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	// DataReaderFromBuffer creates a reader whose data is already available).
 	reader, err := streams.DataReaderFromBuffer(resultBuf)
 	if err != nil {
-		slog.Debug("failed to create data reader", "err", err)
+		log.Debug("failed to create data reader", "err", err)
 		return "", nil
 	}
 	defer reader.Release()
@@ -379,7 +378,7 @@ func (s *Smtc) readThumbnail() (contentType string, data []byte) {
 	// Step 12: Read all bytes from the DataReader's internal buffer.
 	data, err = reader.ReadBytes(bytesRead)
 	if err != nil {
-		slog.Debug("failed to read bytes", "err", err)
+		log.Debug("failed to read bytes", "err", err)
 		return "", nil
 	}
 

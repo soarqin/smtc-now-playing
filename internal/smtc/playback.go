@@ -3,7 +3,6 @@
 package smtc
 
 import (
-	"log/slog"
 	"smtc-now-playing/internal/domain"
 	"time"
 )
@@ -21,7 +20,7 @@ func (s *Smtc) readTimelineAndProgress() {
 	timeline, err := s.currentSession.GetTimelineProperties()
 	if err != nil || timeline == nil {
 		if err != nil {
-			slog.Debug("failed to get timeline properties", "err", err)
+			log.Debug("failed to get timeline properties", "err", err)
 		}
 		return
 	}
@@ -30,7 +29,7 @@ func (s *Smtc) readTimelineAndProgress() {
 	playbackInfo, err := s.currentSession.GetPlaybackInfo()
 	if err != nil || playbackInfo == nil {
 		if err != nil {
-			slog.Debug("failed to get playback info", "err", err)
+			log.Debug("failed to get playback info", "err", err)
 		}
 		return
 	}
@@ -38,7 +37,7 @@ func (s *Smtc) readTimelineAndProgress() {
 	// Get playback status (WinRT enum: Closed=0, Opened=1, Changing=2, Stopped=3, Playing=4, Paused=5)
 	status, err := playbackInfo.GetPlaybackStatus()
 	if err != nil {
-		slog.Debug("failed to get playback status", "err", err)
+		log.Debug("failed to get playback status", "err", err)
 		return
 	}
 	newStatus := int(status)
@@ -46,21 +45,21 @@ func (s *Smtc) readTimelineAndProgress() {
 	// Get position (WinRT TimeSpan.Duration = 100ns ticks)
 	positionSpan, err := timeline.GetPosition()
 	if err != nil {
-		slog.Debug("failed to get timeline position", "err", err)
+		log.Debug("failed to get timeline position", "err", err)
 		return
 	}
 
 	// Get lastUpdatedTime (WinRT DateTime.UniversalTime = 100ns ticks since 1601-01-01)
 	lastUpdated, err := timeline.GetLastUpdatedTime()
 	if err != nil {
-		slog.Debug("failed to get last updated time", "err", err)
+		log.Debug("failed to get last updated time", "err", err)
 		return
 	}
 
 	// Get end time / duration (WinRT TimeSpan.Duration = 100ns ticks)
 	endTimeSpan, err := timeline.GetEndTime()
 	if err != nil {
-		slog.Debug("failed to get end time", "err", err)
+		log.Debug("failed to get end time", "err", err)
 		return
 	}
 

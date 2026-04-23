@@ -1,6 +1,12 @@
 package smtc
 
-import "smtc-now-playing/internal/domain"
+import (
+	"log/slog"
+
+	"smtc-now-playing/internal/domain"
+)
+
+var log = slog.With("subsystem", "smtc")
 
 // Status constants — match C++ GlobalSystemMediaTransportControlsSessionPlaybackStatus exactly
 const (

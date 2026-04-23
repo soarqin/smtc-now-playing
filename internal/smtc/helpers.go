@@ -3,7 +3,6 @@
 package smtc
 
 import (
-	"log/slog"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -86,10 +85,10 @@ func asyncOperationStatus(op *foundation.IAsyncOperation) foundation.AsyncStatus
 func waitForAsync(op *foundation.IAsyncOperation, handlerIID *ole.GUID) (unsafe.Pointer, foundation.AsyncStatus) {
 	if asyncOperationStatus(op) != foundation.AsyncStatusCompleted {
 		hEvent := createEvent()
-		if hEvent == 0 {
-			slog.Warn("waitForAsync: CreateEventW returned NULL")
-			return nil, foundation.AsyncStatusError
-		}
+	if hEvent == 0 {
+		log.Warn("waitForAsync: CreateEventW returned NULL")
+		return nil, foundation.AsyncStatusError
+	}
 		handler := foundation.NewAsyncOperationCompletedHandler(handlerIID, func(
 			_ *foundation.AsyncOperationCompletedHandler,
 			_ *foundation.IAsyncOperation,
@@ -100,7 +99,7 @@ func waitForAsync(op *foundation.IAsyncOperation, handlerIID *ole.GUID) (unsafe.
 		if err := op.SetCompleted(handler); err != nil {
 			// Registration failed — nobody will ever signal hEvent, so
 			// bail out instead of blocking forever in waitForSingleObject.
-			slog.Debug("waitForAsync: SetCompleted failed", "err", err)
+			log.Debug("waitForAsync: SetCompleted failed", "err", err)
 			handler.Release()
 			closeHandle(hEvent)
 			return nil, foundation.AsyncStatusError
@@ -109,7 +108,7 @@ func waitForAsync(op *foundation.IAsyncOperation, handlerIID *ole.GUID) (unsafe.
 		closeHandle(hEvent)
 		handler.Release()
 		if !signaled {
-			slog.Warn("waitForAsync: timed out waiting for completion")
+			log.Warn("waitForAsync: timed out waiting for completion")
 			return nil, foundation.AsyncStatusError
 		}
 	}

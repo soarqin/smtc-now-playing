@@ -3,7 +3,6 @@
 package smtc
 
 import (
-	"log/slog"
 	"smtc-now-playing/internal/domain"
 	"time"
 	"unsafe"
@@ -22,7 +21,7 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 
 	op, err := s.currentSession.TryGetMediaPropertiesAsync()
 	if err != nil {
-		slog.Debug("failed to get media properties async", "err", err)
+		log.Debug("failed to get media properties async", "err", err)
 		s.clearMediaInfo()
 		return
 	}
@@ -74,7 +73,7 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 			case s.cmdChan <- func() { s.retryThumbnailAndFireInfo(escapedArtist, escapedTitle, props) }:
 			default:
 				s.droppedEvents.Add(1)
-				slog.Warn("SMTC event dropped", "type", "ThumbnailRetry", "dropped_total", s.droppedEvents.Load())
+				log.Warn("SMTC event dropped", "type", "ThumbnailRetry", "dropped_total", s.droppedEvents.Load())
 			}
 		})
 		s.timerMu.Unlock()
