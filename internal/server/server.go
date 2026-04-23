@@ -88,6 +88,18 @@ type heartbeatState struct {
 	lastPongUnixMilli atomic.Int64
 }
 
+type wsControlSeekArgs struct {
+	Position int64 `json:"position"`
+}
+
+type wsControlShuffleArgs struct {
+	Active bool `json:"active"`
+}
+
+type wsControlRepeatArgs struct {
+	Mode int `json:"mode"`
+}
+
 func newHeartbeatState(now time.Time) *heartbeatState {
 	state := &heartbeatState{}
 	state.Touch(now)
@@ -116,16 +128,7 @@ func New(cfg *config.Config, smtcSvc SMTCService) (*Server, error) {
 		hub: newHub(),
 	}
 	s.state.Store(&stateSnapshot{})
-
-	mux := s.setupRoutes()
-	s.httpSrv = &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           mux,
-		ReadTimeout:       httpReadTimeout,
-		ReadHeaderTimeout: 3 * time.Second,
-		WriteTimeout:      httpWriteTimeout,
-		IdleTimeout:       httpIdleTimeout,
-	}
+	s.httpSrv = s.newHTTPServer(s.setupRoutes())
 
 	return s, nil
 }
@@ -142,6 +145,26 @@ func (s *Server) setupRoutes() http.Handler {
 	mux.HandleFunc("GET /ws", s.handleWebSocket)
 	mux.HandleFunc("GET /", s.handleTheme)
 	return accessLog(mux, s.cfg.Logging.Debug)
+}
+
+func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              fmt.Sprintf(":%d", s.cfg.Server.Port),
+		Handler:           handler,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: 3 * time.Second,
+	}
+}
+
+func (s *Server) shutdownHTTPServer() {
+	if s.httpSrv == nil {
+		return
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
+	defer cancel()
+	_ = s.httpSrv.Shutdown(shutdownCtx)
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -167,18 +190,15 @@ func (s *Server) Run(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.hub.Shutdown()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
-		defer cancel()
-		_ = s.httpSrv.Shutdown(shutdownCtx)
+		s.shutdownHTTPServer()
 		return ctx.Err()
 	case err := <-watcherErrCh:
 		s.hub.Shutdown()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
-		defer cancel()
-		_ = s.httpSrv.Shutdown(shutdownCtx)
+		s.shutdownHTTPServer()
 		return err
 	case err := <-errCh:
 		s.hub.Shutdown()
+		s.shutdownHTTPServer()
 		return err
 	}
 }
@@ -358,10 +378,7 @@ func (h *wsHandler) OnOpen(socket *gws.Conn) {
 	heartbeat := newHeartbeatState(time.Now())
 	socket.Session().Store(heartbeatStateKey, heartbeat)
 
-	if msg, err := json.Marshal(wsproto.NewHello(version.Version, map[string]bool{
-		"control":   true,
-		"heartbeat": true,
-	})); err == nil {
+	if msg, err := json.Marshal(wsproto.NewHello(version.Version, h.srv.capabilitiesToMap())); err == nil {
 		_ = socket.WriteMessage(gws.OpcodeText, msg)
 	}
 
@@ -421,8 +438,16 @@ func (h *wsHandler) OnMessage(socket *gws.Conn, message *gws.Message) {
 		}
 		go h.srv.handleWSControl(socket, env.ID, ctrl.Action, ctrl.Args)
 	default:
-		slog.Debug("ignoring websocket message", "type", env.Type)
+		h.srv.handleUnknownMessage(socket, env)
 	}
+}
+
+func (s *Server) handleUnknownMessage(conn *gws.Conn, env wsproto.Envelope) {
+	if env.ID != "" {
+		s.writeControlAck(conn, env.ID, fmt.Errorf("unsupported message type: %s", env.Type))
+		return
+	}
+	s.closeUnsupportedProtocol(conn)
 }
 
 func (s *Server) runHeartbeat(conn *gws.Conn) {
@@ -499,25 +524,19 @@ func (s *Server) executeWSControl(action string, args json.RawMessage) error {
 	case "previous":
 		return s.svc.SkipPrevious()
 	case "seek":
-		var body struct {
-			Position int64 `json:"position"`
-		}
+		var body wsControlSeekArgs
 		if err := json.Unmarshal(args, &body); err != nil {
 			return err
 		}
 		return s.svc.SeekTo(body.Position)
 	case "shuffle":
-		var body struct {
-			Active bool `json:"active"`
-		}
+		var body wsControlShuffleArgs
 		if err := json.Unmarshal(args, &body); err != nil {
 			return err
 		}
 		return s.svc.SetShuffle(body.Active)
 	case "repeat":
-		var body struct {
-			Mode int `json:"mode"`
-		}
+		var body wsControlRepeatArgs
 		if err := json.Unmarshal(args, &body); err != nil {
 			return err
 		}
@@ -696,4 +715,23 @@ func sessionInfosToDomain(sessions []smtc.SessionInfo) []domain.SessionInfo {
 		}
 	}
 	return out
+}
+
+func (s *Server) capabilitiesToMap() map[string]bool {
+	caps := s.svc.GetCapabilities()
+	return map[string]bool{
+		"control":          true,
+		"heartbeat":        true,
+		"play":             caps.IsPlayEnabled,
+		"pause":            caps.IsPauseEnabled,
+		"stop":             caps.IsStopEnabled,
+		"next":             caps.IsNextEnabled,
+		"previous":         caps.IsPreviousEnabled,
+		"seek":             caps.IsSeekEnabled,
+		"shuffle":          caps.IsShuffleEnabled,
+		"repeat":           caps.IsRepeatEnabled,
+		"sessions":         true,
+		"reload":           s.cfg.Server.HotReload,
+		"albumArtEndpoint": true,
+	}
 }

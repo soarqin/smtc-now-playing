@@ -3,7 +3,7 @@ setlocal
 
 :: Extract version from internal/version package (the const Version = "x.y.z" line)
 :: so we don't duplicate the version number across the codebase.
-for /f "tokens=4 delims= " %%v in ('findstr /R /C:"^const Version" internal\version\version.go') do (
+for /f "tokens=4 delims= " %%v in ('findstr /R /C:"^var Version" internal\version\version.go') do (
 	set VERSION=%%v
 )
 :: Strip surrounding quotes.

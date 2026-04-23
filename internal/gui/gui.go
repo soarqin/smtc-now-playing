@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -40,9 +41,13 @@ type Gui struct {
 	cbPreviewAlwaysOnTop *ui.CheckBox
 	infoText             *ui.Edit
 
-	cfg               *config.Config
-	srv               *server.Server
-	smtcSvc           server.SMTCService
+	cfg           *config.Config
+	cfgPath       string
+	srv           *server.Server
+	smtcSvc       server.SMTCService
+	serverStarted bool
+	ctx           context.Context
+
 	webViewWin        *webview.Preview
 	msgTaskbarCreated co.WM
 }
@@ -54,13 +59,21 @@ const (
 	SYSTRAY_MENU_START_STOP = 1002
 	SYSTRAY_MENU_EXIT       = 1003
 
-	WM_SESSIONS_CHANGED        = co.WM_APP + 2
-	WM_SELECTED_DEVICE_CHANGED = co.WM_APP + 3
-	SYSTRAY_MENU_DEVICE_BASE   = 2001 // device menu items start at 2001
+	// wmSessionsChanged and wmDeviceChanged use offsets +2 and +3 because
+	// NotifyIconMsg (systray.go) already occupies WM_APP+1.
+	wmSessionsChanged        = co.WM_APP + 2
+	wmDeviceChanged          = co.WM_APP + 3
+	SYSTRAY_MENU_DEVICE_BASE = 2001 // device menu items start at 2001
 )
 
 func New(cfg *config.Config, srv *server.Server, smtcSvc server.SMTCService, version string) *Gui {
 	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--enable-features=msWebView2EnableDraggableRegions")
+
+	cfgPath, err := config.ResolvePath()
+	if err != nil {
+		slog.Warn("failed to resolve config path for saving", "err", err)
+		cfgPath = ""
+	}
 
 	optsMain := ui.OptsMain()
 	if cfg.UI.StartMinimized {
@@ -68,7 +81,7 @@ func New(cfg *config.Config, srv *server.Server, smtcSvc server.SMTCService, ver
 	}
 	wnd := ui.NewMain(
 		optsMain.
-			Title("SMTC Now Playing v"+version).
+			Title("SMTC Now Playing v" + version).
 			Size(ui.Dpi(370, 285)).
 			ClassIconId(0),
 	)
@@ -164,6 +177,7 @@ func New(cfg *config.Config, srv *server.Server, smtcSvc server.SMTCService, ver
 		cbShowPreviewWindow: cbShowPreviewWindow, cbPreviewAlwaysOnTop: cbPreviewAlwaysOnTop,
 		infoText: urlText,
 		cfg:      cfg,
+		cfgPath:  cfgPath,
 		srv:      srv,
 		smtcSvc:  smtcSvc,
 	}
@@ -173,10 +187,10 @@ func New(cfg *config.Config, srv *server.Server, smtcSvc server.SMTCService, ver
 	// If registration fails (extremely unlikely), log and continue — the
 	// only feature we lose is auto-restoring the tray icon after an
 	// Explorer crash, which is never worth bringing the whole app down.
-	var err error
-	me.msgTaskbarCreated, err = win.RegisterWindowMessage("TaskbarCreated")
-	if err != nil {
-		slog.Warn("RegisterWindowMessage(TaskbarCreated) failed; tray icon will not auto-restore after Explorer restart", "err", err)
+	var regErr error
+	me.msgTaskbarCreated, regErr = win.RegisterWindowMessage("TaskbarCreated")
+	if regErr != nil {
+		slog.Warn("RegisterWindowMessage(TaskbarCreated) failed; tray icon will not auto-restore after Explorer restart", "err", regErr)
 		me.msgTaskbarCreated = 0
 	}
 
@@ -205,8 +219,7 @@ func (me *Gui) events() {
 		me.cbStartMinimized.SetCheck(me.cfg.UI.StartMinimized)
 		me.cbShowPreviewWindow.SetCheck(me.cfg.UI.ShowPreviewWindow)
 		me.cbPreviewAlwaysOnTop.SetCheck(me.cfg.UI.PreviewAlwaysOnTop)
-		// Server lifecycle is managed by main; the start/stop button is a no-op.
-		me.btnStart.Hwnd().EnableWindow(false)
+		me.btnStart.Hwnd().EnableWindow(true)
 
 		themes, err := os.ReadDir("themes")
 		if err != nil {
@@ -243,13 +256,34 @@ func (me *Gui) events() {
 			me.wnd.Hwnd().SendMessage(co.WM_SETICON, 1, win.LPARAM(hIcon))
 		}
 
-		// Show server address since the server is always running.
-		me.showServerAddress()
+		// Start bridge goroutine: translate SMTC events into WM messages
+		// so the main thread's message loop handles them on the UI thread.
+		hwnd := me.wnd.Hwnd()
+		sub := me.smtcSvc.Subscribe(16)
+		go func() {
+			defer me.smtcSvc.Unsubscribe(sub)
+			for ev := range sub {
+				switch ev.(type) {
+				case smtc.SessionsChangedEvent:
+					hwnd.PostMessage(wmSessionsChanged, 0, 0)
+				case smtc.DeviceChangedEvent:
+					hwnd.PostMessage(wmDeviceChanged, 0, 0)
+				}
+			}
+		}()
 
-		if me.cfg.UI.ShowPreviewWindow {
-			me.createWebView()
+		// Watch context for external cancellation and post WM_CLOSE so the
+		// message loop exits cleanly on the UI thread.
+		if me.ctx != nil {
+			go func() {
+				<-me.ctx.Done()
+				hwnd.PostMessage(co.WM_CLOSE, 0, 0)
+			}()
 		}
 
+		if me.cfg.UI.AutoStart {
+			me.btnStart.TriggerClick()
+		}
 		return 0
 	})
 
@@ -279,8 +313,7 @@ func (me *Gui) events() {
 			if style, _ := me.wnd.Hwnd().GetWindowLongPtr(co.GWLP_STYLE); style&uintptr(co.WS_VISIBLE) != 0 {
 				isWindowVisible = true
 			}
-			// Server lifecycle is managed externally; it is always running.
-			isServerRunning := true
+			isServerRunning := me.serverStarted
 
 			showHideLabel := "Hide &Window"
 			if !isWindowVisible {
@@ -319,52 +352,54 @@ func (me *Gui) events() {
 			popup.InsertMenuItemByPos(1, mii)
 
 			nextPos := 2
-			sessions := me.smtcSvc.GetSessions()
-			if len(sessions) > 0 {
-				deviceMenu, dErr := win.CreatePopupMenu()
-				if dErr == nil {
-					// Track whether we successfully attached deviceMenu
-					// to popup. If we didn't, we must DestroyMenu it
-					// ourselves — popup.DestroyMenu only cascades to
-					// submenus that are actually attached.
-					attached := false
-					currentDevice := me.cfg.SMTC.SelectedDevice
-					for i, sess := range sessions {
-						itemState := co.MFS_UNCHECKED
-						if sess.AppID == currentDevice || (currentDevice == "" && i == 0) {
-							itemState = co.MFS_CHECKED
+			if me.serverStarted {
+				sessions := me.srv.GetSessions()
+				if len(sessions) > 0 {
+					deviceMenu, dErr := win.CreatePopupMenu()
+					if dErr == nil {
+						// Track whether we successfully attached deviceMenu
+						// to popup. If we didn't, we must DestroyMenu it
+						// ourselves — popup.DestroyMenu only cascades to
+						// submenus that are actually attached.
+						attached := false
+						currentDevice := me.cfg.SMTC.SelectedDevice
+						for i, sess := range sessions {
+							itemState := co.MFS_UNCHECKED
+							if sess.AppID == currentDevice || (currentDevice == "" && i == 0) {
+								itemState = co.MFS_CHECKED
+							}
+							itemPtr, iErr := syscall.UTF16PtrFromString(sess.Name)
+							if iErr != nil {
+								continue
+							}
+							dmi := &win.MENUITEMINFO{
+								FMask:      co.MIIM_STRING | co.MIIM_ID | co.MIIM_STATE | co.MIIM_FTYPE,
+								FType:      co.MFT_STRING | co.MFT_RADIOCHECK,
+								FState:     itemState,
+								WId:        uint32(SYSTRAY_MENU_DEVICE_BASE + i),
+								DwTypeData: itemPtr,
+							}
+							dmi.SetCbSize()
+							deviceMenu.InsertMenuItemByPos(i, dmi)
 						}
-						itemPtr, iErr := syscall.UTF16PtrFromString(sess.Name)
-						if iErr != nil {
-							continue
+						subLabelPtr, sErr := syscall.UTF16PtrFromString("&Device")
+						if sErr == nil {
+							dmi := &win.MENUITEMINFO{
+								FMask:      co.MIIM_STRING | co.MIIM_SUBMENU,
+								FType:      co.MFT_STRING,
+								HSubMenu:   deviceMenu,
+								DwTypeData: subLabelPtr,
+							}
+							dmi.SetCbSize()
+							popup.InsertMenuItemByPos(nextPos, dmi)
+							nextPos++
+							attached = true
 						}
-						dmi := &win.MENUITEMINFO{
-							FMask:      co.MIIM_STRING | co.MIIM_ID | co.MIIM_STATE | co.MIIM_FTYPE,
-							FType:      co.MFT_STRING | co.MFT_RADIOCHECK,
-							FState:     itemState,
-							WId:        uint32(SYSTRAY_MENU_DEVICE_BASE + i),
-							DwTypeData: itemPtr,
+						if !attached {
+							// UTF16 conversion failed — detach the submenu
+							// we built so it's not leaked as an orphan HMENU.
+							deviceMenu.DestroyMenu()
 						}
-						dmi.SetCbSize()
-						deviceMenu.InsertMenuItemByPos(i, dmi)
-					}
-					subLabelPtr, sErr := syscall.UTF16PtrFromString("&Device")
-					if sErr == nil {
-						dmi := &win.MENUITEMINFO{
-							FMask:      co.MIIM_STRING | co.MIIM_SUBMENU,
-							FType:      co.MFT_STRING,
-							HSubMenu:   deviceMenu,
-							DwTypeData: subLabelPtr,
-						}
-						dmi.SetCbSize()
-						popup.InsertMenuItemByPos(nextPos, dmi)
-						nextPos++
-						attached = true
-					}
-					if !attached {
-						// UTF16 conversion failed — detach the submenu
-						// we built so it's not leaked as an orphan HMENU.
-						deviceMenu.DestroyMenu()
 					}
 				}
 			}
@@ -412,17 +447,28 @@ func (me *Gui) events() {
 					me.wnd.Hwnd().SetForegroundWindow()
 				}
 			case SYSTRAY_MENU_START_STOP:
-				// TODO: Server lifecycle is managed by main.go (T19). No-op.
+				if isServerRunning {
+					me.stopWebServer()
+				} else {
+					me.syncConfig()
+					if err := me.cfg.Save(me.cfgPath); err != nil {
+						slog.Warn("failed to save config", "err", err)
+					}
+					me.startWebServer()
+				}
 			case SYSTRAY_MENU_EXIT:
 				me.wnd.Hwnd().DestroyWindow()
 			default:
 				if res >= SYSTRAY_MENU_DEVICE_BASE {
 					idx := int(res) - SYSTRAY_MENU_DEVICE_BASE
+					sessions := me.srv.GetSessions()
 					if idx >= 0 && idx < len(sessions) {
 						appID := sessions[idx].AppID
-						me.smtcSvc.SelectDevice(appID)
+						me.srv.SelectDevice(appID)
 						me.cfg.SMTC.SelectedDevice = appID
-						_ = me.saveConfig()
+						if err := me.cfg.Save(me.cfgPath); err != nil {
+							slog.Warn("failed to save config", "err", err)
+						}
 					}
 				}
 			}
@@ -447,43 +493,66 @@ func (me *Gui) events() {
 	})
 
 	me.themeCombo.On().CbnSelChange(func() {
-		theme := me.themeCombo.CurrentText()
-		me.cfg.UI.Theme = theme
-		_ = me.saveConfig()
-		// Refresh preview with cache-busting URL to load the new theme
-		if me.webViewWin != nil {
-			me.webViewWin.Navigate(fmt.Sprintf("http://127.0.0.1:%s?_t=%d", me.portEdit.Text(), time.Now().UnixMilli()))
+		if me.serverStarted {
+			me.srv.SetTheme(me.themeCombo.CurrentText())
+			me.cfg.UI.Theme = me.themeCombo.CurrentText()
+			if err := me.cfg.Save(me.cfgPath); err != nil {
+				slog.Warn("failed to save config", "err", err)
+			}
+			// Refresh preview with cache-busting URL to load the new theme
+			if me.webViewWin != nil {
+				me.webViewWin.Navigate(fmt.Sprintf("http://127.0.0.1:%s?_t=%d", me.portEdit.Text(), time.Now().UnixMilli()))
+			}
 		}
 	})
 
 	me.deviceCombo.On().CbnSelChange(func() {
 		idx := me.deviceCombo.SelectedIndex()
-		sessions := me.smtcSvc.GetSessions()
+		sessions := me.srv.GetSessions()
 		if idx >= 0 && idx < len(sessions) {
 			appID := sessions[idx].AppID
-			me.smtcSvc.SelectDevice(appID)
+			me.srv.SelectDevice(appID)
 			me.cfg.SMTC.SelectedDevice = appID
-			_ = me.saveConfig()
+			if err := me.cfg.Save(me.cfgPath); err != nil {
+				slog.Warn("failed to save config", "err", err)
+			}
 		}
 	})
 
 	me.btnStart.On().BnClicked(func() {
-		// TODO: Server lifecycle is managed by main.go (T19). No-op.
+		if me.serverStarted {
+			me.stopWebServer()
+			return
+		}
+		me.syncConfig()
+		if err := me.cfg.Save(me.cfgPath); err != nil {
+			slog.Warn("failed to save config", "err", err)
+		}
+		me.startWebServer()
 	})
 
 	me.cbAutoStart.On().BnClicked(func() {
 		me.syncConfig()
-		_ = me.saveConfig()
+		if err := me.cfg.Save(me.cfgPath); err != nil {
+			slog.Warn("failed to save config", "err", err)
+		}
 	})
 
 	me.cbStartMinimized.On().BnClicked(func() {
 		me.syncConfig()
-		_ = me.saveConfig()
+		if err := me.cfg.Save(me.cfgPath); err != nil {
+			slog.Warn("failed to save config", "err", err)
+		}
 	})
 
 	me.cbShowPreviewWindow.On().BnClicked(func() {
 		me.syncConfig()
-		_ = me.saveConfig()
+		if err := me.cfg.Save(me.cfgPath); err != nil {
+			slog.Warn("failed to save config", "err", err)
+		}
+		if !me.serverStarted {
+			return
+		}
 		if me.cbShowPreviewWindow.IsChecked() {
 			me.createWebView()
 		} else {
@@ -493,7 +562,9 @@ func (me *Gui) events() {
 
 	me.cbPreviewAlwaysOnTop.On().BnClicked(func() {
 		me.syncConfig()
-		_ = me.saveConfig()
+		if err := me.cfg.Save(me.cfgPath); err != nil {
+			slog.Warn("failed to save config", "err", err)
+		}
 		if me.webViewWin == nil {
 			return
 		}
@@ -507,8 +578,8 @@ func (me *Gui) events() {
 		return 0
 	})
 
-	me.wnd.On().Wm(WM_SESSIONS_CHANGED, func(p ui.Wm) uintptr {
-		sessions := me.smtcSvc.GetSessions()
+	me.wnd.On().Wm(wmSessionsChanged, func(p ui.Wm) uintptr {
+		sessions := me.srv.GetSessions()
 		me.deviceCombo.DeleteAllItems()
 		selectedIdx := 0
 		for i, sess := range sessions {
@@ -523,8 +594,8 @@ func (me *Gui) events() {
 		return 0
 	})
 
-	me.wnd.On().Wm(WM_SELECTED_DEVICE_CHANGED, func(p ui.Wm) uintptr {
-		sessions := me.smtcSvc.GetSessions()
+	me.wnd.On().Wm(wmDeviceChanged, func(p ui.Wm) uintptr {
+		sessions := me.srv.GetSessions()
 		selectedDevice := me.cfg.SMTC.SelectedDevice
 		for i, sess := range sessions {
 			if sess.AppID == selectedDevice {
@@ -548,30 +619,28 @@ func (me *Gui) syncConfig() {
 	me.cfg.UI.PreviewAlwaysOnTop = me.cbPreviewAlwaysOnTop.IsChecked()
 }
 
-func (me *Gui) saveConfig() error {
-	path, _ := config.ResolvePath()
-	if path == "" {
-		return nil
-	}
-	return me.cfg.Save(path)
-}
+func (me *Gui) startWebServer() {
+	me.serverStarted = true
 
-// showServerAddress displays the listening addresses in the info text box.
-func (me *Gui) showServerAddress() {
+	// Compute listening addresses from the server's bound address.
 	addr := me.srv.Address()
-	if addr == "" {
-		return
+	var port string
+	if strings.HasPrefix(addr, "0.0.0.0:") {
+		port = addr[len("0.0.0.0:"):]
+	} else if strings.HasPrefix(addr, ":") {
+		port = addr[1:]
 	}
-	var addresses []string
-	if strings.HasPrefix(addr, ":") {
-		port := strings.TrimPrefix(addr, ":")
-		ifaceAddrs, err := net.InterfaceAddrs()
+
+	addresses := []string{}
+	if port != "" {
+		addrs, err := net.InterfaceAddrs()
 		if err != nil {
 			me.wnd.Hwnd().MessageBox(err.Error(), "Error", co.MB_ICONERROR)
 			return
 		}
-		for _, a := range ifaceAddrs {
-			ip, _, err := net.ParseCIDR(a.String())
+		for _, iaddr := range addrs {
+			saddr := iaddr.String()
+			ip, _, err := net.ParseCIDR(saddr)
 			if err != nil {
 				continue
 			}
@@ -589,16 +658,38 @@ func (me *Gui) showServerAddress() {
 		addresses = append(addresses, fmt.Sprintf("http://%s", addr))
 	}
 	me.infoText.SetText(fmt.Sprintf("Server listening on:\r\n  %s", strings.Join(addresses, "\r\n  ")))
+	me.btnStart.SetText("&Stop")
+	me.btnStart.Hwnd().EnableWindow(true)
+
+	if me.cbShowPreviewWindow.IsChecked() {
+		me.createWebView()
+	}
+}
+
+func (me *Gui) stopWebServer() {
+	me.btnStart.Hwnd().EnableWindow(false)
+	me.serverStarted = false
+	me.destroyWebView()
+	me.infoText.SetText("")
+	me.btnStart.SetText("&Start")
+	me.btnStart.Hwnd().EnableWindow(true)
 }
 
 func (me *Gui) createWebView() {
 	if me.webViewWin != nil {
 		return
 	}
-	wv, err := webview.New(context.Background(), webview.Options{
+	ctx := me.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	wv, err := webview.New(ctx, webview.Options{
 		URL:         fmt.Sprintf("http://127.0.0.1:%s?_t=%d", me.portEdit.Text(), time.Now().UnixMilli()),
 		AlwaysOnTop: me.cbPreviewAlwaysOnTop.IsChecked(),
 		OnDestroy: func() {
+			if !me.serverStarted {
+				return
+			}
 			if me.webViewWin != nil {
 				me.webViewWin.Destroy()
 				me.webViewWin = nil
@@ -610,7 +701,7 @@ func (me *Gui) createWebView() {
 		},
 	})
 	if err != nil {
-		log.Warn("webview preview unavailable", "err", err)
+		slog.Warn("failed to create WebView2 preview", "err", err)
 		return
 	}
 	me.webViewWin = wv
@@ -638,34 +729,18 @@ func (me *Gui) updateWebViewAlwaysOnTop() {
 	}
 }
 
-// handleBridgeEvent is called from the bridge goroutine to translate SMTC
-// events into Windows messages posted to the GUI thread.
-func (g *Gui) handleBridgeEvent(ev smtc.Event) {
-	hwnd := g.wnd.Hwnd()
-	switch ev.(type) {
-	case smtc.SessionsChangedEvent:
-		hwnd.PostMessage(WM_SESSIONS_CHANGED, 0, 0)
-	case smtc.DeviceChangedEvent:
-		e := ev.(smtc.DeviceChangedEvent)
-		g.cfg.SMTC.SelectedDevice = e.AppID
-		hwnd.PostMessage(WM_SELECTED_DEVICE_CHANGED, 0, 0)
+// Run locks the calling goroutine to its OS thread (required for the Win32
+// message loop), then runs the windigo main window until the window is
+// destroyed or ctx is cancelled. Returns context.Canceled on normal close so
+// that errgroup propagates the shutdown signal to other services.
+func (me *Gui) Run(ctx context.Context) error {
+	runtime.LockOSThread()
+	me.ctx = ctx
+	code := me.wnd.RunAsMain()
+	if code != 0 {
+		return fmt.Errorf("gui exited with code %d", code)
 	}
-}
-
-// Run starts the bridge goroutine that forwards SMTC events to the GUI thread
-// via PostMessage, then runs the windigo message loop until the window closes.
-func (g *Gui) Run(ctx context.Context) error {
-	eventCh := g.smtcSvc.Subscribe(16)
-	go func() {
-		defer g.smtcSvc.Unsubscribe(eventCh)
-		for ev := range eventCh {
-			g.handleBridgeEvent(ev)
-		}
-	}()
-
-	exitCode := g.wnd.RunAsMain()
-	if exitCode != 0 {
-		return fmt.Errorf("gui: RunAsMain exited with code %d", exitCode)
-	}
-	return nil
+	// Return context.Canceled so the errgroup cancels the shared context,
+	// signalling smtcSvc and server to stop when the window closes.
+	return context.Canceled
 }

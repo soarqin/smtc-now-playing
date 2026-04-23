@@ -27,6 +27,6 @@ func accessLog(next http.Handler, debug bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startedAt := time.Now()
 		next.ServeHTTP(w, r)
-		slog.Debug("http request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(startedAt))
+		slog.Debug("request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(startedAt))
 	})
 }

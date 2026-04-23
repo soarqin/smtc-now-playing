@@ -2,6 +2,7 @@ package webview
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"unsafe"
@@ -127,7 +128,7 @@ func New(ctx context.Context, opts Options) (*Preview, error) {
 	wv := &Preview{ctx: ctx}
 	wv.webViewWin = webview2.NewWithOptions(webViewOptions)
 	if wv.webViewWin == nil {
-		return nil, fmt.Errorf("webview2: failed to create WebView2 window")
+		return nil, fmt.Errorf("webview: %w", errors.New("failed to create WebView2 window"))
 	}
 
 	if opts.OnRootLoaded != nil {

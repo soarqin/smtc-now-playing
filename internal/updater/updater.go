@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 )
+
+var log = slog.With("subsystem", "updater")
 
 // DefaultAPIURL is the GitHub releases API endpoint for this project.
 const DefaultAPIURL = "https://api.github.com/repos/soarqin/smtc-now-playing/releases/latest"

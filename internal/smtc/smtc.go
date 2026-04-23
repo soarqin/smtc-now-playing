@@ -4,6 +4,7 @@ package smtc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -13,6 +14,11 @@ import (
 	"github.com/go-ole/go-ole"
 	"github.com/saltosystems/winrt-go/windows/foundation"
 	"github.com/saltosystems/winrt-go/windows/media/control"
+)
+
+// Sentinel errors for SMTC operations.
+var (
+	ErrSubscriberDropped = errors.New("smtc: subscriber buffer full")
 )
 
 // Smtc manages Windows System Media Transport Controls.

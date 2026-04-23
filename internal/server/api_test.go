@@ -12,7 +12,7 @@ import (
 )
 
 func TestHandleNowPlaying_NoSession_404(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/now-playing", nil)
 	w := httptest.NewRecorder()
 	srv.handleNowPlaying(w, req)
@@ -22,7 +22,7 @@ func TestHandleNowPlaying_NoSession_404(t *testing.T) {
 }
 
 func TestHandleNowPlaying_WithData_200(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	srv.handleInfoEvent(domain.InfoData{Title: "Test Track", Artist: "Test Artist"})
 	req := httptest.NewRequest(http.MethodGet, "/api/now-playing", nil)
 	w := httptest.NewRecorder()
@@ -48,7 +48,7 @@ func TestHandleNowPlaying_WithData_200(t *testing.T) {
 }
 
 func TestHandleDevices_Empty_ReturnsArray(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/devices", nil)
 	w := httptest.NewRecorder()
 	srv.handleSessions(w, req)
@@ -62,7 +62,7 @@ func TestHandleDevices_Empty_ReturnsArray(t *testing.T) {
 }
 
 func TestHandleDevices_WithSessions_200(t *testing.T) {
-	srv, svc := newTestServer(t)
+	srv, svc, _ := newTestServer(t)
 	svc.sessions = []smtc.SessionInfo{{AppID: "com.example.player", Name: "Example Player", SourceAppID: "example"}}
 	req := httptest.NewRequest(http.MethodGet, "/api/devices", nil)
 	w := httptest.NewRecorder()
@@ -77,7 +77,7 @@ func TestHandleDevices_WithSessions_200(t *testing.T) {
 }
 
 func TestHandleCapabilities_200(t *testing.T) {
-	srv, svc := newTestServer(t)
+	srv, svc, _ := newTestServer(t)
 	svc.capabilities = smtc.ControlCapabilities{IsPlayEnabled: true}
 	req := httptest.NewRequest(http.MethodGet, "/api/capabilities", nil)
 	w := httptest.NewRecorder()
@@ -95,7 +95,7 @@ func TestHandleCapabilities_200(t *testing.T) {
 }
 
 func TestHandleControlPlay_LocalhostAllowed(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/control/play", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.SetPathValue("action", "play")
@@ -114,7 +114,7 @@ func TestHandleControlPlay_LocalhostAllowed(t *testing.T) {
 }
 
 func TestHandleControlPlay_RemoteForbidden(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/control/play", nil)
 	req.RemoteAddr = "192.168.1.100:12345"
 	req.SetPathValue("action", "play")
@@ -126,7 +126,7 @@ func TestHandleControlPlay_RemoteForbidden(t *testing.T) {
 }
 
 func TestHandleCapabilities_ReturnsShape(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/capabilities", nil)
 	w := httptest.NewRecorder()
 	srv.handleCapabilities(w, req)
@@ -142,7 +142,7 @@ func TestHandleCapabilities_ReturnsShape(t *testing.T) {
 }
 
 func TestHandleControlSeek_ValidBody(t *testing.T) {
-	srv, svc := newTestServer(t)
+	srv, svc, _ := newTestServer(t)
 	svc.seekErr = smtc.ErrNoSession
 	req := httptest.NewRequest(http.MethodPost, "/api/control/seek", strings.NewReader(`{"position": 5000}`))
 	req.RemoteAddr = "127.0.0.1:1234"
@@ -152,13 +152,13 @@ func TestHandleControlSeek_ValidBody(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("got %d want %d", w.Code, http.StatusOK)
 	}
-	if svc.seekPosition != 5000 {
-		t.Fatalf("seekPosition = %d", svc.seekPosition)
+	if len(svc.seekCalls) != 1 || svc.seekCalls[0] != 5000 {
+		t.Fatalf("seekCalls = %v, want [5000]", svc.seekCalls)
 	}
 }
 
 func TestHandleControlSeek_InvalidBody(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/control/seek", strings.NewReader(`not json`))
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.SetPathValue("action", "seek")
@@ -170,19 +170,22 @@ func TestHandleControlSeek_InvalidBody(t *testing.T) {
 }
 
 func TestHandleControlShuffle_ValidBody(t *testing.T) {
-	srv, svc := newTestServer(t)
+	srv, svc, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/control/shuffle", strings.NewReader(`{"active": true}`))
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.SetPathValue("action", "shuffle")
 	w := httptest.NewRecorder()
 	localhostOnly(srv.handleControl, false)(w, req)
-	if w.Code != http.StatusOK || !svc.shuffleActive {
-		t.Fatalf("unexpected result code=%d active=%v", w.Code, svc.shuffleActive)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d want %d", w.Code, http.StatusOK)
+	}
+	if len(svc.shuffleCalls) != 1 || !svc.shuffleCalls[0] {
+		t.Fatalf("shuffleCalls = %v, want [true]", svc.shuffleCalls)
 	}
 }
 
 func TestHandleControlShuffle_InvalidBody(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/control/shuffle", strings.NewReader(`bad`))
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.SetPathValue("action", "shuffle")
@@ -194,19 +197,22 @@ func TestHandleControlShuffle_InvalidBody(t *testing.T) {
 }
 
 func TestHandleControlRepeat_ValidBody(t *testing.T) {
-	srv, svc := newTestServer(t)
+	srv, svc, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/control/repeat", strings.NewReader(`{"mode": 1}`))
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.SetPathValue("action", "repeat")
 	w := httptest.NewRecorder()
 	localhostOnly(srv.handleControl, false)(w, req)
-	if w.Code != http.StatusOK || svc.repeatMode != 1 {
-		t.Fatalf("unexpected result code=%d mode=%d", w.Code, svc.repeatMode)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d want %d", w.Code, http.StatusOK)
+	}
+	if len(svc.repeatCalls) != 1 || svc.repeatCalls[0] != 1 {
+		t.Fatalf("repeatCalls = %v, want [1]", svc.repeatCalls)
 	}
 }
 
 func TestHandleControlRepeat_InvalidBody(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/control/repeat", strings.NewReader(`bad`))
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.SetPathValue("action", "repeat")
@@ -218,7 +224,7 @@ func TestHandleControlRepeat_InvalidBody(t *testing.T) {
 }
 
 func TestHandleControl_AllowRemote(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/control/play", nil)
 	req.RemoteAddr = "192.168.1.100:1234"
 	req.SetPathValue("action", "play")

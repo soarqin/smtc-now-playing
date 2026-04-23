@@ -13,8 +13,21 @@ var log = slog.With("subsystem", "config")
 
 // Sentinel errors for configuration validation.
 var (
-	ErrInvalidConfig = errors.New("invalid configuration")
+	ErrInvalidConfig  = errors.New("config: invalid configuration")
+	ErrConfigNotFound = errors.New("config: file not found")
 )
+
+// ValidationError represents a configuration validation error.
+type ValidationError struct {
+	Field  string
+	Value  any
+	Reason string
+}
+
+// Error implements the error interface.
+func (e *ValidationError) Error() string {
+	return fmt.Sprintf("config: field %q (value %v) %s", e.Field, e.Value, e.Reason)
+}
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {

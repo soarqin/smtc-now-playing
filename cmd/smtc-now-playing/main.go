@@ -128,14 +128,12 @@ func runApp(cfg *config.Config, headless bool) int {
 	defer cancel()
 
 	g, gctx := errgroup.WithContext(ctx)
-
 	g.Go(func() error { return smtcSvc.Run(gctx) })
 	g.Go(func() error { return srv.Run(gctx) })
 
 	if !headless {
-		slog.Info("starting GUI mode", "port", cfg.Server.Port)
-		guiApp := gui.New(cfg, srv, smtcSvc, version.Version)
-		g.Go(func() error { return guiApp.Run(gctx) })
+		guiInst := gui.New(cfg, srv, smtcSvc, version.Version)
+		g.Go(func() error { return guiInst.Run(gctx) })
 	} else {
 		slog.Info("headless mode", "port", cfg.Server.Port, "url", fmt.Sprintf("http://localhost:%d", cfg.Server.Port))
 	}

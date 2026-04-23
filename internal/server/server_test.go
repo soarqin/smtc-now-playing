@@ -412,6 +412,50 @@ func TestHandleWebSocket_PingAndControlMessages(t *testing.T) {
 	}
 }
 
+func TestHandleWebSocket_UnknownMessageWithIDGetsAck(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	httpSrv := startWSTestServer(t, srv)
+	conn, handler := connectWSClient(t, httpSrv.URL)
+	_ = mustReadEnvelope(t, handler.msgs)
+
+	msg := []byte(`{"type":"bogus","v":2,"id":"req-unknown","ts":1}`)
+	if err := conn.WriteMessage(gws.OpcodeText, msg); err != nil {
+		t.Fatalf("write unknown message: %v", err)
+	}
+
+	ack := mustReadEnvelope(t, handler.msgs)
+	if ack.Type != wsproto.MsgAck || ack.ID != "req-unknown" {
+		t.Fatalf("ack envelope = %+v", ack)
+	}
+	var payload wsproto.AckPayload
+	if err := json.Unmarshal(ack.Data, &payload); err != nil {
+		t.Fatalf("decode ack payload: %v", err)
+	}
+	if payload.Success || payload.Error == "" {
+		t.Fatalf("ack payload = %+v, want unsuccessful ack with error", payload)
+	}
+}
+
+func TestHandleEvent_SessionsChangedBroadcasts(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	httpSrv := startWSTestServer(t, srv)
+	_, handler := connectWSClient(t, httpSrv.URL)
+	_ = mustReadEnvelope(t, handler.msgs)
+
+	srv.handleEvent(smtc.SessionsChangedEvent{Sessions: []domain.SessionInfo{{AppID: "app", Name: "Player", SourceAppID: "app.exe"}}})
+	env := mustReadEnvelope(t, handler.msgs)
+	if env.Type != wsproto.MsgSessions {
+		t.Fatalf("sessions envelope type = %q, want %q", env.Type, wsproto.MsgSessions)
+	}
+	var payload wsproto.SessionsPayload
+	if err := json.Unmarshal(env.Data, &payload); err != nil {
+		t.Fatalf("decode sessions payload: %v", err)
+	}
+	if len(payload.Sessions) != 1 || payload.Sessions[0].AppID != "app" {
+		t.Fatalf("sessions payload = %+v", payload)
+	}
+}
+
 func TestHandleWebSocket_UnsupportedVersionClosesConnection(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	httpSrv := startWSTestServer(t, srv)
