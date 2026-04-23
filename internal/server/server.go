@@ -19,8 +19,32 @@ import (
 	"smtc-now-playing/internal/config"
 	"smtc-now-playing/internal/domain"
 	"smtc-now-playing/internal/smtc"
+	"smtc-now-playing/internal/version"
 	"smtc-now-playing/internal/wsproto"
 )
+
+var log = slog.With("subsystem", "server")
+
+// Sentinel errors for server operations.
+var (
+	ErrServerShutdown = errors.New("server: shut down")
+)
+
+// ControlError represents an error during media control execution.
+type ControlError struct {
+	Action string
+	Err    error
+}
+
+// Error implements the error interface.
+func (e *ControlError) Error() string {
+	return fmt.Sprintf("server: control %s failed: %v", e.Action, e.Err)
+}
+
+// Unwrap returns the underlying error.
+func (e *ControlError) Unwrap() error {
+	return e.Err
+}
 
 type SMTCService interface {
 	Subscribe(bufSize int) <-chan smtc.Event
@@ -58,6 +82,26 @@ type Server struct {
 	state atomic.Pointer[stateSnapshot]
 }
 
+const heartbeatStateKey = "heartbeatState"
+
+type heartbeatState struct {
+	lastPongUnixMilli atomic.Int64
+}
+
+func newHeartbeatState(now time.Time) *heartbeatState {
+	state := &heartbeatState{}
+	state.Touch(now)
+	return state
+}
+
+func (s *heartbeatState) Touch(now time.Time) {
+	s.lastPongUnixMilli.Store(now.UnixMilli())
+}
+
+func (s *heartbeatState) LastPong() time.Time {
+	return time.UnixMilli(s.lastPongUnixMilli.Load())
+}
+
 func New(cfg *config.Config, smtcSvc SMTCService) (*Server, error) {
 	if cfg == nil {
 		return nil, errors.New("server: nil config")
@@ -82,7 +126,7 @@ func New(cfg *config.Config, smtcSvc SMTCService) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) setupRoutes() *http.ServeMux {
+func (s *Server) setupRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/now-playing", s.handleNowPlaying)
 	mux.HandleFunc("GET /api/devices", s.handleSessions)
@@ -307,18 +351,29 @@ type wsHandler struct {
 
 func (h *wsHandler) OnOpen(socket *gws.Conn) {
 	h.srv.hub.Add(socket)
-	state := h.srv.snapshot()
-	if len(state.infoJSON) > 0 {
-		_ = socket.WriteMessage(gws.OpcodeText, state.infoJSON)
+	heartbeat := newHeartbeatState(time.Now())
+	socket.Session().Store(heartbeatStateKey, heartbeat)
+
+	if msg, err := json.Marshal(wsproto.NewHello(version.Version, map[string]bool{
+		"control":   true,
+		"heartbeat": true,
+	})); err == nil {
+		_ = socket.WriteMessage(gws.OpcodeText, msg)
 	}
-	if len(state.progressJSON) > 0 {
-		_ = socket.WriteMessage(gws.OpcodeText, state.progressJSON)
+
+	snapshot := h.srv.snapshot()
+	if len(snapshot.infoJSON) > 0 {
+		_ = socket.WriteMessage(gws.OpcodeText, snapshot.infoJSON)
+	}
+	if len(snapshot.progressJSON) > 0 {
+		_ = socket.WriteMessage(gws.OpcodeText, snapshot.progressJSON)
 	}
 	if sessions := h.srv.svc.GetSessions(); len(sessions) > 0 {
 		if msg, err := json.Marshal(wsproto.NewSessions(sessionInfosToDomain(sessions))); err == nil {
 			_ = socket.WriteMessage(gws.OpcodeText, msg)
 		}
 	}
+	go h.srv.runHeartbeat(socket)
 	slog.Info("WS client connected")
 }
 
@@ -331,10 +386,152 @@ func (h *wsHandler) OnPing(socket *gws.Conn, payload []byte) {
 	_ = socket.WritePong(payload)
 }
 
-func (h *wsHandler) OnPong(socket *gws.Conn, payload []byte) {}
+func (h *wsHandler) OnPong(socket *gws.Conn, payload []byte) {
+	h.srv.touchHeartbeat(socket)
+}
 
 func (h *wsHandler) OnMessage(socket *gws.Conn, message *gws.Message) {
-	message.Close()
+	defer message.Close()
+
+	env, err := wsproto.ParseEnvelope(message.Bytes())
+	if err != nil {
+		h.srv.closeUnsupportedProtocol(socket)
+		return
+	}
+
+	switch env.Type {
+	case wsproto.MsgPing:
+		msg, err := json.Marshal(wsproto.NewPong(env.TS))
+		if err != nil {
+			slog.Warn("failed to marshal websocket pong", "err", err)
+			return
+		}
+		_ = socket.WriteMessage(gws.OpcodeText, msg)
+	case wsproto.MsgPong:
+		h.srv.touchHeartbeat(socket)
+	case wsproto.MsgControl:
+		ctrl, err := env.ParseControl()
+		if err != nil || ctrl.Action == "" {
+			h.srv.writeControlAck(socket, env.ID, errors.New("invalid control payload"))
+			return
+		}
+		go h.srv.handleWSControl(socket, env.ID, ctrl.Action, ctrl.Args)
+	default:
+		slog.Debug("ignoring websocket message", "type", env.Type)
+	}
+}
+
+func (s *Server) runHeartbeat(conn *gws.Conn) {
+	ticker := time.NewTicker(wsHeartbeatInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		lastPong := s.lastHeartbeat(conn)
+		if !lastPong.IsZero() && time.Since(lastPong) > wsHeartbeatTimeout {
+			_ = conn.WriteClose(4001, []byte("heartbeat timeout"))
+			if netConn := conn.NetConn(); netConn != nil {
+				_ = netConn.Close()
+			}
+			return
+		}
+
+		msg, err := json.Marshal(wsproto.NewPing())
+		if err != nil {
+			slog.Warn("failed to marshal websocket ping", "err", err)
+			return
+		}
+		if err := conn.WriteMessage(gws.OpcodeText, msg); err != nil {
+			return
+		}
+	}
+}
+
+func (s *Server) closeUnsupportedProtocol(conn *gws.Conn) {
+	_ = conn.WriteClose(4002, []byte("unsupported protocol version"))
+	if netConn := conn.NetConn(); netConn != nil {
+		_ = netConn.Close()
+	}
+}
+
+func (s *Server) touchHeartbeat(conn *gws.Conn) {
+	if state := s.heartbeatState(conn); state != nil {
+		state.Touch(time.Now())
+	}
+}
+
+func (s *Server) lastHeartbeat(conn *gws.Conn) time.Time {
+	if state := s.heartbeatState(conn); state != nil {
+		return state.LastPong()
+	}
+	return time.Time{}
+}
+
+func (s *Server) heartbeatState(conn *gws.Conn) *heartbeatState {
+	value, ok := conn.Session().Load(heartbeatStateKey)
+	if !ok {
+		return nil
+	}
+	state, _ := value.(*heartbeatState)
+	return state
+}
+
+func (s *Server) handleWSControl(conn *gws.Conn, id string, action string, args json.RawMessage) {
+	err := s.executeWSControl(action, args)
+	s.writeControlAck(conn, id, err)
+}
+
+func (s *Server) executeWSControl(action string, args json.RawMessage) error {
+	switch action {
+	case "play":
+		return s.svc.Play()
+	case "pause":
+		return s.svc.Pause()
+	case "stop":
+		return s.svc.StopPlayback()
+	case "toggle":
+		return s.svc.TogglePlayPause()
+	case "next":
+		return s.svc.SkipNext()
+	case "previous":
+		return s.svc.SkipPrevious()
+	case "seek":
+		var body struct {
+			Position int64 `json:"position"`
+		}
+		if err := json.Unmarshal(args, &body); err != nil {
+			return err
+		}
+		return s.svc.SeekTo(body.Position)
+	case "shuffle":
+		var body struct {
+			Active bool `json:"active"`
+		}
+		if err := json.Unmarshal(args, &body); err != nil {
+			return err
+		}
+		return s.svc.SetShuffle(body.Active)
+	case "repeat":
+		var body struct {
+			Mode int `json:"mode"`
+		}
+		if err := json.Unmarshal(args, &body); err != nil {
+			return err
+		}
+		return s.svc.SetRepeat(body.Mode)
+	default:
+		return fmt.Errorf("unknown action: %s", action)
+	}
+}
+
+func (s *Server) writeControlAck(conn *gws.Conn, id string, controlErr error) {
+	msg, err := json.Marshal(wsproto.NewAck(id, controlErr))
+	if err != nil {
+		slog.Warn("failed to marshal websocket ack", "err", err)
+		return
+	}
+	if err := conn.WriteMessage(gws.OpcodeText, msg); err != nil {
+		slog.Debug("failed to write websocket ack", "err", err)
+	}
 }
 
 func (s *Server) handleAlbumArt(w http.ResponseWriter, r *http.Request) {
