@@ -2,6 +2,8 @@ package smtc
 
 import (
 	"testing"
+
+	"smtc-now-playing/internal/domain"
 )
 
 // TestEscape verifies that escape() correctly escapes all special characters
@@ -34,5 +36,45 @@ func TestEscape(t *testing.T) {
 				t.Errorf("escape(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestEventTypesImplementSealedInterface(t *testing.T) {
+	var _ Event = InfoEvent{}
+	var _ Event = ProgressEvent{}
+	var _ Event = SessionsChangedEvent{}
+	var _ Event = DeviceChangedEvent{}
+}
+
+func TestInfoDataToDomain(t *testing.T) {
+	src := InfoData{
+		Artist:               "Artist",
+		Title:                "Title",
+		ThumbnailContentType: "image/png",
+		ThumbnailData:        []byte{1, 2, 3},
+		AlbumTitle:           "Album",
+		AlbumArtist:          "Album Artist",
+		PlaybackType:         2,
+		SourceApp:            "Spotify.exe",
+	}
+
+	got := infoDataToDomain(src)
+	want := domain.InfoData{
+		Artist:               "Artist",
+		Title:                "Title",
+		ThumbnailContentType: "image/png",
+		ThumbnailData:        []byte{1, 2, 3},
+		AlbumTitle:           "Album",
+		AlbumArtist:          "Album Artist",
+		PlaybackType:         2,
+		SourceApp:            "Spotify.exe",
+	}
+
+	if !got.Equal(&want) {
+		t.Fatalf("infoDataToDomain() = %+v, want %+v", got, want)
+	}
+	src.ThumbnailData[0] = 9
+	if got.ThumbnailData[0] != 1 {
+		t.Fatal("thumbnail data was not copied")
 	}
 }

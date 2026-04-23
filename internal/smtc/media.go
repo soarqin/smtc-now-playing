@@ -69,7 +69,7 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 		if s.thumbnailRetryTimer != nil {
 			s.thumbnailRetryTimer.Stop()
 		}
-		s.thumbnailRetryTimer = time.AfterFunc(50*time.Millisecond, func() {
+		s.thumbnailRetryTimer = time.AfterFunc(thumbnailRetryDelay, func() {
 			select {
 			case s.cmdChan <- func() { s.retryThumbnailAndFireInfo(escapedArtist, escapedTitle, props) }:
 			default:
@@ -94,7 +94,7 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	albumArtist, _ := props.GetAlbumArtist()
 	playbackTypeRef, _ := props.GetPlaybackType()
 	playbackType, _ := readNullableInt32(playbackTypeRef)
-	s.fanout(InfoEvent{Data: domain.InfoData{
+	s.fanOut(InfoEvent{Data: domain.InfoData{
 		Artist:               s.currentArtist,
 		Title:                s.currentTitle,
 		ThumbnailContentType: contentType,
@@ -124,7 +124,7 @@ func (s *Smtc) retryThumbnailAndFireInfo(artist, title string, props *control.Gl
 	albumArtist, _ := props.GetAlbumArtist()
 	playbackTypeRef, _ := props.GetPlaybackType()
 	playbackType, _ := readNullableInt32(playbackTypeRef)
-	s.fanout(InfoEvent{Data: domain.InfoData{
+	s.fanOut(InfoEvent{Data: domain.InfoData{
 		Artist:               artist,
 		Title:                title,
 		ThumbnailContentType: contentType,
@@ -149,7 +149,7 @@ func (s *Smtc) clearMediaInfo() {
 	s.currentThumbnailSize = 0
 	s.currentThumbnailData = nil
 	s.currentThumbnailContentType = ""
-	s.fanout(InfoEvent{Data: domain.InfoData{}})
+	s.fanOut(InfoEvent{Data: domain.InfoData{}})
 }
 
 // handlePlaybackInfoChanged responds to WinRT PlaybackInfoChanged events by delegating

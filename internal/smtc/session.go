@@ -189,7 +189,7 @@ func (s *Smtc) applySessionList(sessions []SessionInfo, objects []*control.Globa
 	s.sessionObjects = objects
 	s.mu.Unlock()
 
-	s.fanout(SessionsChangedEvent{Sessions: sessionInfosToDomain(sessions)})
+	s.fanOut(SessionsChangedEvent{Sessions: sessionInfosToDomain(sessions)})
 
 	if len(sessions) == 0 {
 		// No active sessions: clear all state and fire empty callbacks.
@@ -200,8 +200,8 @@ func (s *Smtc) applySessionList(sessions []SessionInfo, objects []*control.Globa
 		s.currentStatus = StatusClosed
 		s.currentThumbnailSize = 0
 		s.mu.Unlock()
-		s.fanout(InfoEvent{Data: infoDataToDomain(InfoData{})})
-		s.fanout(ProgressEvent{Data: progressDataToDomain(ProgressData{Status: StatusClosed})})
+		s.fanOut(InfoEvent{Data: infoDataToDomain(InfoData{})})
+		s.fanOut(ProgressEvent{Data: progressDataToDomain(ProgressData{Status: StatusClosed})})
 		return
 	}
 
@@ -248,7 +248,7 @@ func (s *Smtc) switchToSession(index int) {
 	if index < len(sessions) {
 		appID := sessions[index].AppID
 		slog.Info("SMTC session changed", "app", appID)
-		s.fanout(DeviceChangedEvent{AppID: appID})
+		s.fanOut(DeviceChangedEvent{AppID: appID})
 	}
 }
 

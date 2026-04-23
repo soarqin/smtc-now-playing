@@ -32,7 +32,7 @@ type hub struct {
 
 func newHub() *hub {
 	return &hub{
-		ch:          make(chan hubCmd, 64),
+		ch:          make(chan hubCmd, hubChanCapacity),
 		connections: make(map[*gws.Conn]struct{}),
 	}
 }

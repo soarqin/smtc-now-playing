@@ -1,0 +1,32 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - revive
+    - misspell
+    - gocritic
+    - bodyclose
+    - contextcheck
+    - errorlint
+    - nilerr
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    staticcheck:
+      checks:
+        - all
+
+issues:
+  exclude-rules:
+    - path: _test\.go$
+      linters:
+        - errcheck
+    - path: mock_.*\.go$
+      linters:
+        - unused

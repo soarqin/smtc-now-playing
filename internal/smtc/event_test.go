@@ -19,7 +19,7 @@ func TestSubscribeFanout_TwoSubscribers(t *testing.T) {
 	})
 
 	event := InfoEvent{Data: domain.InfoData{Artist: "artist", Title: "title"}}
-	s.fanout(event)
+	s.fanOut(event)
 
 	assertEventReceived(t, ch1, event)
 	assertEventReceived(t, ch2, event)
@@ -33,8 +33,8 @@ func TestSubscribe_DropsOnFullBuffer(t *testing.T) {
 	first := InfoEvent{Data: domain.InfoData{Artist: "first"}}
 	second := InfoEvent{Data: domain.InfoData{Artist: "second"}}
 
-	s.fanout(first)
-	s.fanout(second)
+	s.fanOut(first)
+	s.fanOut(second)
 
 	assertEventReceived(t, ch, first)
 	if got := s.dropCount(ch); got != 1 {
@@ -74,7 +74,7 @@ func TestUnsubscribe_ChannelClosed(t *testing.T) {
 		t.Fatal("timed out waiting for closed channel")
 	}
 
-	s.fanout(InfoEvent{Data: domain.InfoData{Artist: "ignored"}})
+	s.fanOut(InfoEvent{Data: domain.InfoData{Artist: "ignored"}})
 }
 
 func (s *Smtc) dropCount(ch <-chan Event) int64 {

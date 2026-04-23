@@ -156,3 +156,13 @@ func TestControlAction_Constants(t *testing.T) {
 		t.Errorf("ControlRepeat = %d, want 8", ControlRepeat)
 	}
 }
+
+func TestSubscribe_NegativeBufferUsesUnbufferedChannel(t *testing.T) {
+	s := New(Options{})
+	ch := s.Subscribe(-1)
+	defer s.Unsubscribe(ch)
+
+	if cap(ch) != 0 {
+		t.Fatalf("channel capacity = %d, want 0", cap(ch))
+	}
+}

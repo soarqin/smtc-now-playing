@@ -4,6 +4,8 @@ package smtc
 
 import (
 	"testing"
+
+	"smtc-now-playing/internal/domain"
 )
 
 // TestReadNullableBool_NilSafe verifies that readNullableBool safely handles nil IReference.
@@ -87,5 +89,16 @@ func TestFriendlyAppName(t *testing.T) {
 				t.Errorf("friendlyAppName(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSessionInfosToDomain(t *testing.T) {
+	got := sessionInfosToDomain([]SessionInfo{{AppID: "app", Name: "Name", SourceAppID: "source"}})
+	want := []domain.SessionInfo{{AppID: "app", Name: "Name", SourceAppID: "source"}}
+	if len(got) != len(want) {
+		t.Fatalf("len(sessionInfosToDomain()) = %d, want %d", len(got), len(want))
+	}
+	if got[0] != want[0] {
+		t.Fatalf("sessionInfosToDomain()[0] = %+v, want %+v", got[0], want[0])
 	}
 }

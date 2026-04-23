@@ -99,7 +99,7 @@ func (s *Server) setupRoutes() *http.ServeMux {
 func (s *Server) Run(ctx context.Context) error {
 	go s.hub.Run(ctx)
 
-	eventCh := s.svc.Subscribe(64)
+	eventCh := s.svc.Subscribe(subscribeBufSize)
 	defer s.svc.Unsubscribe(eventCh)
 
 	go s.processEvents(ctx, eventCh)
@@ -119,13 +119,13 @@ func (s *Server) Run(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.hub.Shutdown()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
 		defer cancel()
 		_ = s.httpSrv.Shutdown(shutdownCtx)
 		return ctx.Err()
 	case err := <-watcherErrCh:
 		s.hub.Shutdown()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
 		defer cancel()
 		_ = s.httpSrv.Shutdown(shutdownCtx)
 		return err
@@ -261,7 +261,7 @@ func (s *Server) runHotReload(ctx context.Context, errCh chan<- error) {
 				return
 			}
 			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
-				debounce.Reset(500 * time.Millisecond)
+				debounce.Reset(hotReloadDebounce)
 			}
 		case err, ok := <-watcher.Errors:
 			if !ok {

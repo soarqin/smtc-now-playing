@@ -122,7 +122,7 @@ func (s *Smtc) readTimelineAndProgress() {
 	s.currentStatus = newStatus
 	s.mu.Unlock()
 
-	s.fanout(ProgressEvent{Data: domain.ProgressData{
+	s.fanOut(ProgressEvent{Data: domain.ProgressData{
 		Position:        newPosition,
 		Duration:        newDuration,
 		Status:          newStatus,
@@ -136,7 +136,7 @@ func (s *Smtc) readTimelineAndProgress() {
 // startProgressTimer starts a 200ms ticker that calls readTimelineAndProgress on each tick.
 // Must be called from the smtc goroutine.
 func (s *Smtc) startProgressTimer() {
-	s.progressTicker = time.NewTicker(200 * time.Millisecond)
+	s.progressTicker = time.NewTicker(progressTickInterval)
 }
 
 // stopProgressTimer stops the progress ticker.

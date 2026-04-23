@@ -74,7 +74,7 @@ type subscriber struct {
 func New(opts Options) *Smtc {
 	return &Smtc{
 		opts:          opts,
-		cmdChan:       make(chan func(), 32),
+		cmdChan:       make(chan func(), cmdChanCapacity),
 		selectedAppID: opts.InitialDevice,
 	}
 }
@@ -192,8 +192,8 @@ func (s *Smtc) Unsubscribe(ch <-chan Event) {
 	}
 }
 
-// fanout sends ev to all subscribers non-blocking, dropping and counting if full.
-func (s *Smtc) fanout(ev Event) {
+// fanOut sends ev to all subscribers non-blocking, dropping and counting if full.
+func (s *Smtc) fanOut(ev Event) {
 	s.subsMu.Lock()
 	defer s.subsMu.Unlock()
 	for _, sub := range s.subscribers {
