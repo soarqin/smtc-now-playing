@@ -4,6 +4,7 @@ package smtc
 
 import (
 	"log/slog"
+	"smtc-now-playing/internal/domain"
 	"time"
 )
 
@@ -121,17 +122,15 @@ func (s *Smtc) readTimelineAndProgress() {
 	s.currentStatus = newStatus
 	s.mu.Unlock()
 
-	if s.opts.OnProgress != nil {
-		s.opts.OnProgress(ProgressData{
-			Position:        newPosition,
-			Duration:        newDuration,
-			Status:          newStatus,
-			PlaybackRate:    newPlaybackRate,
-			IsShuffleActive: newIsShuffleActive,
-			AutoRepeatMode:  newAutoRepeatMode,
-			LastUpdatedTime: newLastUpdatedMs,
-		})
-	}
+	s.fanout(ProgressEvent{Data: domain.ProgressData{
+		Position:        newPosition,
+		Duration:        newDuration,
+		Status:          newStatus,
+		PlaybackRate:    newPlaybackRate,
+		IsShuffleActive: newIsShuffleActive,
+		AutoRepeatMode:  newAutoRepeatMode,
+		LastUpdatedTime: newLastUpdatedMs,
+	}})
 }
 
 // startProgressTimer starts a 200ms ticker that calls readTimelineAndProgress on each tick.

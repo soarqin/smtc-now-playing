@@ -166,7 +166,7 @@ func (s *Smtc) enumerateSessions() {
 	s.applySessionList(sessions, objects)
 }
 
-// applySessionList stores the new session list under the mutex, fires OnSessionsChanged,
+// applySessionList stores the new session list under the mutex, fires SessionsChangedEvent,
 // and switches to the appropriate session. Called only from the smtc goroutine.
 func (s *Smtc) applySessionList(sessions []SessionInfo, objects []*control.GlobalSystemMediaTransportControlsSession) {
 	// Determine which session to select: keep selectedAppID if still present,
@@ -189,9 +189,7 @@ func (s *Smtc) applySessionList(sessions []SessionInfo, objects []*control.Globa
 	s.sessionObjects = objects
 	s.mu.Unlock()
 
-	if s.opts.OnSessionsChanged != nil {
-		s.opts.OnSessionsChanged(sessions)
-	}
+	s.fanout(SessionsChangedEvent{Sessions: sessionInfosToDomain(sessions)})
 
 	if len(sessions) == 0 {
 		// No active sessions: clear all state and fire empty callbacks.
@@ -202,12 +200,8 @@ func (s *Smtc) applySessionList(sessions []SessionInfo, objects []*control.Globa
 		s.currentStatus = StatusClosed
 		s.currentThumbnailSize = 0
 		s.mu.Unlock()
-		if s.opts.OnInfo != nil {
-			s.opts.OnInfo(InfoData{})
-		}
-		if s.opts.OnProgress != nil {
-			s.opts.OnProgress(ProgressData{Status: StatusClosed})
-		}
+		s.fanout(InfoEvent{Data: infoDataToDomain(InfoData{})})
+		s.fanout(ProgressEvent{Data: progressDataToDomain(ProgressData{Status: StatusClosed})})
 		return
 	}
 
@@ -232,7 +226,7 @@ func (s *Smtc) selectDevice(appID string) {
 
 // switchToSession switches SMTC monitoring to the session at the given index.
 // Unsubscribes old property events, subscribes new ones, reads initial media properties,
-// and fires OnSelectedDeviceChange. Must be called from the smtc goroutine.
+// and fires DeviceChangedEvent. Must be called from the smtc goroutine.
 func (s *Smtc) switchToSession(index int) {
 	if s.currentSession != nil {
 		s.unsubscribePropertyEvents()
@@ -251,10 +245,10 @@ func (s *Smtc) switchToSession(index int) {
 	s.subscribePropertyEvents()
 	s.handleMediaPropertiesChanged()
 
-	if s.opts.OnSelectedDeviceChange != nil && index < len(sessions) {
+	if index < len(sessions) {
 		appID := sessions[index].AppID
 		slog.Info("SMTC session changed", "app", appID)
-		s.opts.OnSelectedDeviceChange(appID)
+		s.fanout(DeviceChangedEvent{AppID: appID})
 	}
 }
 

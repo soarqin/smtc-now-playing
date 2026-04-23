@@ -1,5 +1,7 @@
 package smtc
 
+import "smtc-now-playing/internal/domain"
+
 // Status constants — match C++ GlobalSystemMediaTransportControlsSessionPlaybackStatus exactly
 const (
 	StatusClosed   = 0
@@ -10,7 +12,7 @@ const (
 	StatusPaused   = 5
 )
 
-// InfoData holds media info passed to OnInfo callback
+// InfoData holds media info used internally for deduplication.
 type InfoData struct {
 	Artist               string
 	Title                string
@@ -19,9 +21,10 @@ type InfoData struct {
 	AlbumTitle           string
 	AlbumArtist          string
 	PlaybackType         int // 0=Unknown, 1=Music, 2=Video, 3=Image
+	SourceApp            string
 }
 
-// ProgressData holds playback progress passed to OnProgress callback
+// ProgressData holds playback progress used internally for deduplication.
 type ProgressData struct {
 	Position        int
 	Duration        int
@@ -31,12 +34,6 @@ type ProgressData struct {
 	AutoRepeatMode  int   // 0=None, 1=Track, 2=List
 	LastUpdatedTime int64 // Unix milliseconds
 }
-
-// InfoCallback is called when media info changes
-type InfoCallback func(InfoData)
-
-// ProgressCallback is called when playback progress changes
-type ProgressCallback func(ProgressData)
 
 // ControlCapabilities reports which media controls the current session supports.
 type ControlCapabilities struct {
@@ -57,13 +54,83 @@ type SessionInfo struct {
 	SourceAppID string
 }
 
-// Options configures the Smtc instance
+// Event is the sealed interface for all SMTC events. The unexported method
+// prevents external types from implementing it.
+type Event interface{ smtcEvent() }
+
+// InfoEvent is emitted when media info changes.
+type InfoEvent struct{ Data domain.InfoData }
+
+func (InfoEvent) smtcEvent() {}
+
+// ProgressEvent is emitted every ~200ms while media is active.
+type ProgressEvent struct{ Data domain.ProgressData }
+
+func (ProgressEvent) smtcEvent() {}
+
+// SessionsChangedEvent is emitted when the set of SMTC sessions changes.
+type SessionsChangedEvent struct{ Sessions []domain.SessionInfo }
+
+func (SessionsChangedEvent) smtcEvent() {}
+
+// DeviceChangedEvent is emitted when the active SMTC session switches.
+type DeviceChangedEvent struct{ AppID string }
+
+func (DeviceChangedEvent) smtcEvent() {}
+
+// Options configures the Smtc instance.
 type Options struct {
-	OnInfo                 InfoCallback
-	OnProgress             ProgressCallback
-	OnSessionsChanged      func([]SessionInfo)
-	OnSelectedDeviceChange func(string)
-	InitialDevice          string
+	InitialDevice string
+}
+
+func infoDataToDomain(data InfoData) domain.InfoData {
+	thumb := append([]byte(nil), data.ThumbnailData...)
+	return domain.InfoData{
+		Artist:               data.Artist,
+		Title:                data.Title,
+		ThumbnailContentType: data.ThumbnailContentType,
+		ThumbnailData:        thumb,
+		AlbumTitle:           data.AlbumTitle,
+		AlbumArtist:          data.AlbumArtist,
+		PlaybackType:         data.PlaybackType,
+		SourceApp:            data.SourceApp,
+	}
+}
+
+func progressDataToDomain(data ProgressData) domain.ProgressData {
+	var shuffle *bool
+	if data.IsShuffleActive != nil {
+		value := *data.IsShuffleActive
+		shuffle = &value
+	}
+	return domain.ProgressData{
+		Position:        data.Position,
+		Duration:        data.Duration,
+		Status:          data.Status,
+		PlaybackRate:    data.PlaybackRate,
+		IsShuffleActive: shuffle,
+		AutoRepeatMode:  data.AutoRepeatMode,
+		LastUpdatedTime: data.LastUpdatedTime,
+	}
+}
+
+func sessionInfoToDomain(data SessionInfo) domain.SessionInfo {
+	return domain.SessionInfo{
+		AppID:       data.AppID,
+		Name:        data.Name,
+		SourceAppID: data.SourceAppID,
+	}
+}
+
+func sessionInfosToDomain(data []SessionInfo) []domain.SessionInfo {
+	if len(data) == 0 {
+		return nil
+	}
+	out := make([]domain.SessionInfo, len(data))
+	for i, item := range data {
+		out[i] = sessionInfoToDomain(item)
+	}
+	return out
 }
 
 // escape replicates C++ escape() — escapes special characters in artist/title strings

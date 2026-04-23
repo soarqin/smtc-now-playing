@@ -15,12 +15,16 @@ import (
 	"github.com/saltosystems/winrt-go/windows/media/control"
 )
 
-// Smtc manages Windows System Media Transport Controls with callback-based updates
+// Smtc manages Windows System Media Transport Controls.
 type Smtc struct {
 	opts          Options
 	cmdChan       chan func()
 	droppedEvents atomic.Int64
 	mu            sync.Mutex // protects sessions, sessionObjects, currentStatus, currentPosition, currentDuration, currentArtist, currentTitle, currentThumbnailSize, currentProperties
+
+	// Subscriber state — protected by subsMu.
+	subsMu      sync.Mutex
+	subscribers []*subscriber
 
 	// Session management
 	sessionManager *control.GlobalSystemMediaTransportControlsSessionManager
@@ -59,6 +63,11 @@ type Smtc struct {
 	// goroutine (via handleMediaPropertiesChanged) and Run() cleanup.
 	thumbnailRetryTimer *time.Timer
 	timerMu             sync.Mutex
+}
+
+type subscriber struct {
+	ch      chan Event
+	dropped atomic.Int64
 }
 
 // New creates a new Smtc instance with the given options
@@ -127,6 +136,13 @@ func (s *Smtc) cleanupRun() {
 	}
 	s.sessionsChangedToken = foundation.EventRegistrationToken{}
 	s.currentProperties = nil
+
+	s.subsMu.Lock()
+	for _, sub := range s.subscribers {
+		close(sub.ch)
+	}
+	s.subscribers = nil
+	s.subsMu.Unlock()
 }
 
 // SelectDevice selects the SMTC session identified by appID for monitoring.
@@ -146,4 +162,45 @@ func (s *Smtc) GetSessions() []SessionInfo {
 	result := make([]SessionInfo, len(s.sessions))
 	copy(result, s.sessions)
 	return result
+}
+
+// Subscribe creates a new event channel with the given buffer size.
+// Caller must call Unsubscribe when done to avoid channel leaks.
+func (s *Smtc) Subscribe(bufSize int) <-chan Event {
+	if bufSize < 0 {
+		bufSize = 0
+	}
+	sub := &subscriber{ch: make(chan Event, bufSize)}
+	s.subsMu.Lock()
+	s.subscribers = append(s.subscribers, sub)
+	s.subsMu.Unlock()
+	return sub.ch
+}
+
+// Unsubscribe removes a subscriber and closes its channel.
+func (s *Smtc) Unsubscribe(ch <-chan Event) {
+	s.subsMu.Lock()
+	defer s.subsMu.Unlock()
+	for i, sub := range s.subscribers {
+		if (<-chan Event)(sub.ch) == ch {
+			copy(s.subscribers[i:], s.subscribers[i+1:])
+			s.subscribers[len(s.subscribers)-1] = nil
+			s.subscribers = s.subscribers[:len(s.subscribers)-1]
+			close(sub.ch)
+			return
+		}
+	}
+}
+
+// fanout sends ev to all subscribers non-blocking, dropping and counting if full.
+func (s *Smtc) fanout(ev Event) {
+	s.subsMu.Lock()
+	defer s.subsMu.Unlock()
+	for _, sub := range s.subscribers {
+		select {
+		case sub.ch <- ev:
+		default:
+			sub.dropped.Add(1)
+		}
+	}
 }

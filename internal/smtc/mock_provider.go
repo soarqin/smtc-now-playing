@@ -2,62 +2,99 @@
 
 package smtc
 
+import (
+	"context"
+	"sync"
+)
+
 // MockProvider implements Provider for testing without real WinRT.
-// Tests set InfoCallback / ProgressCallback directly to simulate events.
 type MockProvider struct {
-	// InfoCallback stores the OnInfo callback registered via SetCallbacks.
-	// Tests can invoke it directly: mock.InfoCallback(smtc.InfoData{...})
-	InfoCallback InfoCallback
-
-	// ProgressCallback stores the OnProgress callback registered via SetCallbacks.
-	// Tests can invoke it directly: mock.ProgressCallback(smtc.ProgressData{...})
-	ProgressCallback ProgressCallback
-
-	// MockSessions is the list returned by ListSessions.
-	MockSessions []SessionInfo
-
-	// SelectedAppID is set by SelectSession for test assertions.
+	mu            sync.Mutex
+	subscribers   map[chan Event]*struct{}
+	sessions      []SessionInfo
 	SelectedAppID string
-
-	// storedOpts retains all callbacks from the last SetCallbacks call.
-	storedOpts Options
 }
 
-// Start is a no-op — no WinRT initialisation in tests.
-func (m *MockProvider) Start() {}
-
-// Stop is a no-op.
-func (m *MockProvider) Stop() {}
-
-// SetCallbacks stores opts and exposes the info/progress callbacks as public fields
-// so tests can trigger them directly.
-func (m *MockProvider) SetCallbacks(opts Options) {
-	m.storedOpts = opts
-	m.InfoCallback = opts.OnInfo
-	m.ProgressCallback = opts.OnProgress
+// Run blocks until ctx is canceled, then closes all subscriber channels.
+func (m *MockProvider) Run(ctx context.Context) error {
+	<-ctx.Done()
+	m.mu.Lock()
+	for ch := range m.subscribers {
+		close(ch)
+	}
+	m.subscribers = nil
+	m.mu.Unlock()
+	return ctx.Err()
 }
 
-// ListSessions returns the pre-configured MockSessions slice.
-func (m *MockProvider) ListSessions() []SessionInfo {
-	return m.MockSessions
+// Subscribe registers a new event subscriber.
+func (m *MockProvider) Subscribe(bufSize int) <-chan Event {
+	if bufSize < 0 {
+		bufSize = 0
+	}
+	ch := make(chan Event, bufSize)
+	m.mu.Lock()
+	if m.subscribers == nil {
+		m.subscribers = make(map[chan Event]*struct{})
+	}
+	m.subscribers[ch] = &struct{}{}
+	m.mu.Unlock()
+	return ch
 }
 
-// SelectSession records the chosen appID and returns nil (no error).
-func (m *MockProvider) SelectSession(appID string) error {
+// Unsubscribe removes a subscriber and closes its channel.
+func (m *MockProvider) Unsubscribe(ch <-chan Event) {
+	m.mu.Lock()
+	for writeCh := range m.subscribers {
+		if (<-chan Event)(writeCh) == ch {
+			delete(m.subscribers, writeCh)
+			close(writeCh)
+			break
+		}
+	}
+	m.mu.Unlock()
+}
+
+// Inject sends an event to all subscribers.
+func (m *MockProvider) Inject(e Event) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for ch := range m.subscribers {
+		select {
+		case ch <- e:
+		default:
+		}
+	}
+}
+
+// GetSessions returns the configured session list.
+func (m *MockProvider) GetSessions() []SessionInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.sessions) == 0 {
+		return nil
+	}
+	out := make([]SessionInfo, len(m.sessions))
+	copy(out, m.sessions)
+	return out
+}
+
+// SelectDevice records the selected app ID.
+func (m *MockProvider) SelectDevice(appID string) {
+	m.mu.Lock()
 	m.SelectedAppID = appID
-	return nil
+	m.mu.Unlock()
 }
 
-// TriggerSessionsChanged fires the OnSessionsChanged callback if registered.
-func (m *MockProvider) TriggerSessionsChanged(sessions []SessionInfo) {
-	if m.storedOpts.OnSessionsChanged != nil {
-		m.storedOpts.OnSessionsChanged(sessions)
-	}
-}
+// GetCapabilities returns an empty capability set for tests.
+func (m *MockProvider) GetCapabilities() ControlCapabilities { return ControlCapabilities{} }
 
-// TriggerDeviceChange fires the OnSelectedDeviceChange callback if registered.
-func (m *MockProvider) TriggerDeviceChange(appID string) {
-	if m.storedOpts.OnSelectedDeviceChange != nil {
-		m.storedOpts.OnSelectedDeviceChange(appID)
-	}
-}
+func (m *MockProvider) Play() error                   { return ErrNoSession }
+func (m *MockProvider) Pause() error                  { return ErrNoSession }
+func (m *MockProvider) StopPlayback() error           { return ErrNoSession }
+func (m *MockProvider) TogglePlayPause() error        { return ErrNoSession }
+func (m *MockProvider) SkipNext() error               { return ErrNoSession }
+func (m *MockProvider) SkipPrevious() error           { return ErrNoSession }
+func (m *MockProvider) SeekTo(positionMs int64) error { return ErrNoSession }
+func (m *MockProvider) SetShuffle(active bool) error  { return ErrNoSession }
+func (m *MockProvider) SetRepeat(mode int) error      { return ErrNoSession }

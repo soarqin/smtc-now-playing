@@ -4,6 +4,7 @@ package smtc
 
 import (
 	"log/slog"
+	"smtc-now-playing/internal/domain"
 	"time"
 	"unsafe"
 
@@ -88,22 +89,21 @@ func (s *Smtc) handleMediaPropertiesChanged() {
 	s.currentArtist = escapedArtist
 	s.currentTitle = escapedTitle
 
-	if s.opts.OnInfo != nil {
-		// Extract album info and playback type just before firing the callback.
-		albumTitle, _ := props.GetAlbumTitle()
-		albumArtist, _ := props.GetAlbumArtist()
-		playbackTypeRef, _ := props.GetPlaybackType()
-		playbackType, _ := readNullableInt32(playbackTypeRef)
-		s.opts.OnInfo(InfoData{
-			Artist:               s.currentArtist,
-			Title:                s.currentTitle,
-			ThumbnailContentType: contentType,
-			ThumbnailData:        thumbData,
-			AlbumTitle:           escape(albumTitle),
-			AlbumArtist:          escape(albumArtist),
-			PlaybackType:         int(playbackType),
-		})
-	}
+	// Extract album info and playback type just before firing the event.
+	albumTitle, _ := props.GetAlbumTitle()
+	albumArtist, _ := props.GetAlbumArtist()
+	playbackTypeRef, _ := props.GetPlaybackType()
+	playbackType, _ := readNullableInt32(playbackTypeRef)
+	s.fanout(InfoEvent{Data: domain.InfoData{
+		Artist:               s.currentArtist,
+		Title:                s.currentTitle,
+		ThumbnailContentType: contentType,
+		ThumbnailData:        thumbData,
+		AlbumTitle:           domain.Escape(albumTitle),
+		AlbumArtist:          domain.Escape(albumArtist),
+		PlaybackType:         int(playbackType),
+		SourceApp:            s.selectedAppID,
+	}})
 }
 
 // retryThumbnailAndFireInfo is called ~50ms after a song change when the initial
@@ -120,21 +120,20 @@ func (s *Smtc) retryThumbnailAndFireInfo(artist, title string, props *control.Gl
 		return
 	}
 	contentType, thumbData := s.readThumbnail()
-	if s.opts.OnInfo != nil {
-		albumTitle, _ := props.GetAlbumTitle()
-		albumArtist, _ := props.GetAlbumArtist()
-		playbackTypeRef, _ := props.GetPlaybackType()
-		playbackType, _ := readNullableInt32(playbackTypeRef)
-		s.opts.OnInfo(InfoData{
-			Artist:               artist,
-			Title:                title,
-			ThumbnailContentType: contentType,
-			ThumbnailData:        thumbData,
-			AlbumTitle:           escape(albumTitle),
-			AlbumArtist:          escape(albumArtist),
-			PlaybackType:         int(playbackType),
-		})
-	}
+	albumTitle, _ := props.GetAlbumTitle()
+	albumArtist, _ := props.GetAlbumArtist()
+	playbackTypeRef, _ := props.GetPlaybackType()
+	playbackType, _ := readNullableInt32(playbackTypeRef)
+	s.fanout(InfoEvent{Data: domain.InfoData{
+		Artist:               artist,
+		Title:                title,
+		ThumbnailContentType: contentType,
+		ThumbnailData:        thumbData,
+		AlbumTitle:           domain.Escape(albumTitle),
+		AlbumArtist:          domain.Escape(albumArtist),
+		PlaybackType:         int(playbackType),
+		SourceApp:            s.selectedAppID,
+	}})
 }
 
 // clearMediaInfo clears artist/title/properties state and fires an empty OnInfo callback.
@@ -150,9 +149,7 @@ func (s *Smtc) clearMediaInfo() {
 	s.currentThumbnailSize = 0
 	s.currentThumbnailData = nil
 	s.currentThumbnailContentType = ""
-	if s.opts.OnInfo != nil {
-		s.opts.OnInfo(InfoData{})
-	}
+	s.fanout(InfoEvent{Data: domain.InfoData{}})
 }
 
 // handlePlaybackInfoChanged responds to WinRT PlaybackInfoChanged events by delegating
