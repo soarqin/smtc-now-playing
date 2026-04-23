@@ -226,7 +226,7 @@
 </head>
 <body>
   <div class="player-card" id="root">
-    <img class="album-art" id="albumArt" />
+    <img class="album-art" id="albumArt" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs%3D" alt="" />
     <div class="content">
       <div class="track-info" id="trackInfo">
         <div class="text-wrapper"><h2 class="track-title" id="trackName">Not Playing</h2></div>
@@ -315,19 +315,26 @@
       };
 
       // --- API: Set album art ---
+      // Dedup: skip the entire crossfade when the URL is unchanged. The
+      // shared dispatcher in script/functions.js already dedups at a
+      // higher level, but this guards against any direct caller (tests,
+      // future call sites) and makes the contract explicit.
+      var lastAlbumArtUrl = '';
       window.setAlbumArt = function(url) {
-        if (url) {
-          url = url.trim();
-          if (url !== '') {
-            // Crossfade: scale down then back up
-            albumArtEl.classList.add('changing');
-            setTimeout(function() {
-              albumArtEl.src = url + '?v=' + Date.now();
-              albumArtEl.classList.add('visible');
-              albumArtEl.classList.remove('changing');
-            }, 50);
-            return;
-          }
+        var normalized = url ? url.trim() : '';
+        if (normalized === lastAlbumArtUrl) {
+          return;
+        }
+        lastAlbumArtUrl = normalized;
+        if (normalized !== '') {
+          // Crossfade: scale down then back up
+          albumArtEl.classList.add('changing');
+          setTimeout(function() {
+            albumArtEl.src = normalized;
+            albumArtEl.classList.add('visible');
+            albumArtEl.classList.remove('changing');
+          }, 50);
+          return;
         }
         // No art — hide completely
         albumArtEl.classList.remove('visible');

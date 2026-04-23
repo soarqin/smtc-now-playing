@@ -226,7 +226,7 @@
         if (url) {
           url = url.trim()
           if (url !== '') {
-            albumArtEl.src = url + '?v=' + Date.now();
+            albumArtEl.src = url;
             albumArtDiv.style.display = 'block';
             return;
           }

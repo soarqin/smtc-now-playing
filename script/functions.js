@@ -135,6 +135,11 @@ document.addEventListener('DOMContentLoaded', function () {
     // Current track info for song-change transition detection
     var currentTitle = null;
     var currentArtist = null;
+    // Track the last album-art URL actually pushed to the theme so we can
+    // skip redundant setAlbumArt calls. Themes (notably `modern`) run a
+    // visible opacity crossfade on every setAlbumArt invocation; calling
+    // with an unchanged URL produces a spurious fade-out / fade-in cycle.
+    var currentAlbumArt = '';
     // Pending track info during a song-change transition. Any follow-up
     // info event that arrives within the 300ms transition window (e.g.
     // a late-arriving album art) updates this in place so the timeout
@@ -195,7 +200,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 pendingTrackInfo = { title: title, artist: artist, albumArt: albumArt };
             } else {
                 window.setTrackInfo(title, artist);
-                window.setAlbumArt(albumArt);
+                // Dedup: only push album art when the URL actually changed.
+                // Prevents a visible re-fade on every same-track info event.
+                if (albumArt !== currentAlbumArt) {
+                    currentAlbumArt = albumArt;
+                    window.setAlbumArt(albumArt);
+                }
             }
         } else {
             // Song changed: add transitioning class, delay DOM update for CSS fade-out.
@@ -212,6 +222,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (pendingTrackInfo !== null) {
                     window.setTrackInfo(pendingTrackInfo.title, pendingTrackInfo.artist);
                     window.setAlbumArt(pendingTrackInfo.albumArt);
+                    currentAlbumArt = pendingTrackInfo.albumArt;
                     pendingTrackInfo = null;
                 }
                 document.documentElement.classList.remove('transitioning');
